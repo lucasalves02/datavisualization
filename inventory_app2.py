@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Apr  2 20:31:44 2025
-
+Streamlit Inventory Policy Analysis Dashboard
 @author: lucas
 """
 
@@ -12,104 +12,108 @@ import seaborn as sns
 import numpy as np
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
-import io # Potentially needed for error handling or alternative input
-import traceback
+import io # Needed for text area parsing
+import traceback # To display detailed errors if needed
 
-# --- Configuration & Styling (Optional) ---
+# --- Configuration & Styling ---
 st.set_page_config(layout="wide") # Use wider layout
-# You can add custom CSS here if needed
 
-# --- Helper Functions (Refactored from your notebook cells) ---
+# --- Helper Functions ---
 
 def perform_baseline_calculations(df):
     """Takes the raw DataFrame and returns the merged_df with diff %."""
     try:
+        # Ensure input is a DataFrame
+        if not isinstance(df, pd.DataFrame):
+             st.error("Input data is not a valid DataFrame.")
+             return None
+
         # Check for required columns
         required_cols = {'POLICY', 'LT', 'SERVICE_LEVEL', 'STOCK'}
         if not required_cols.issubset(df.columns):
             st.error(f"Input data must contain columns: {required_cols}")
             return None
 
+        # Convert relevant columns to numeric, coercing errors
+        df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
+        df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce')
+        # Drop rows where essential numeric conversions failed
+        df.dropna(subset=['SERVICE_LEVEL', 'STOCK'], inplace=True)
+
         # Pivot baseline (BSL) for calculations
         if 'BSL' not in df['POLICY'].unique():
             st.error("Baseline policy 'BSL' not found in the 'POLICY' column.")
             return None
-        baseline_df = df[df['POLICY'] == 'BSL'][['LT', 'SERVICE_LEVEL', 'STOCK']].set_index('LT')
+        # Ensure baseline has unique LT index after potential NA drops
+        baseline_df = df[df['POLICY'] == 'BSL'].drop_duplicates(subset=['LT'])
+        baseline_df = baseline_df[['LT', 'SERVICE_LEVEL', 'STOCK']].set_index('LT')
+
 
         # Merge baseline data with other policies
-        merged_df = df[df['POLICY'] != 'BSL'].merge(baseline_df, on='LT', suffixes=('', '_BSL'), how='left') # Use left merge to keep all non-BSL rows
+        merged_df = df[df['POLICY'] != 'BSL'].merge(baseline_df, on='LT', suffixes=('', '_BSL'), how='left')
 
-        # Handle cases where merge might fail for some LT if BSL doesn't have all LTs
+        # Handle cases where merge might fail or result in NAs
         if merged_df['SERVICE_LEVEL_BSL'].isnull().any() or merged_df['STOCK_BSL'].isnull().any():
-             st.warning("Some non-BSL entries didn't find a matching 'LT' in the baseline 'BSL' data. Calculations might be incomplete.")
-             # Optionally drop rows with missing baseline data or handle differently
+             st.warning("Some non-BSL entries didn't find a matching 'LT' in the baseline 'BSL' data or baseline had missing values. Affected rows dropped.")
              merged_df.dropna(subset=['SERVICE_LEVEL_BSL', 'STOCK_BSL'], inplace=True)
 
-        # Calculate percentage differences
-        # Avoid division by zero if baseline stock is 0
+        if merged_df.empty:
+            st.warning("No data left after merging with baseline. Cannot calculate differences.")
+            return None
+
+        # Calculate percentage differences, avoiding division by zero
         merged_df['STOCK_DIFF%'] = 100 * (merged_df['STOCK'] - merged_df['STOCK_BSL']) / merged_df['STOCK_BSL'].replace({0: np.nan})
         merged_df['SERVICE_DIFF%'] = 100 * (merged_df['SERVICE_LEVEL'] - merged_df['SERVICE_LEVEL_BSL']) / merged_df['SERVICE_LEVEL_BSL'].replace({0: np.nan})
-        merged_df.dropna(subset=['STOCK_DIFF%', 'SERVICE_DIFF%'], inplace=True) # Drop rows where calculation failed
+        # Drop rows where calculation itself failed (e.g., division by NaN)
+        merged_df.dropna(subset=['STOCK_DIFF%', 'SERVICE_DIFF%'], inplace=True)
 
-        # Rename Lead Times
+        # Rename Lead Times using mapping
         lt_mapping = {'LT1': '88%', 'LT2': '90%', 'LT3': '92%', 'LT4': '94%', 'LT5': '96%'}
-        # Handle potential missing LT values gracefully
-        merged_df['LT_Percent'] = merged_df['LT'].map(lt_mapping).fillna(merged_df['LT']) # Keep original LT if not in mapping
-
+        merged_df['LT_Percent'] = merged_df['LT'].map(lt_mapping).fillna(merged_df['LT'].astype(str)) # Keep original LT (as string) if not in mapping
 
         return merged_df
 
     except Exception as e:
-        st.error(f"Error during calculations: {e}")
+        st.error(f"Error during baseline calculations: {e}")
+        # st.code(traceback.format_exc()) # Uncomment for detailed debugging
         return None
 
+# --- Plotting Functions ---
 
-def plot_relative_performance(merged_df,custom_title=None):
-    """Generates the plot from Cell 1."""
+def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5):
+    """Generates the Relative Performance plot with dynamic axis limits."""
     if merged_df is None or merged_df.empty:
         st.warning("Cannot generate relative performance plot: No processed data available.")
         return None
 
-    fig, ax = plt.subplots(figsize=(10, 7)) # Create fig and ax
+    fig, ax = plt.subplots(figsize=(10, 7))
 
     try:
-        # Define distinct colors for SL Targets (ensure enough colors if more than 5 LTs)
-        lt_labels_unique = merged_df['LT_Percent'].unique()
-        # Use a standard colormap if too many LTs, or define more colors
+        # Define distinct colors for SL Targets
+        lt_labels_unique = sorted(merged_df['LT_Percent'].unique()) # Sort for consistent color mapping
         num_colors_needed = len(lt_labels_unique)
-        if num_colors_needed <= 5:
-             distinct_colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00']
-        else:
-             # Generate colors from a colormap if more are needed
-             cmap = plt.get_cmap('tab10') # Or another suitable colormap like 'viridis'
-             distinct_colors = [cmap(i) for i in np.linspace(0, 1, num_colors_needed)]
+        # Use a standard palette suitable for qualitative data
+        palette = sns.color_palette('tab10', n_colors=max(num_colors_needed, 10))
+        distinct_colors = palette[:num_colors_needed]
+        lt_color_map = dict(zip(lt_labels_unique, distinct_colors))
 
-        lt_color_map = dict(zip(lt_labels_unique, distinct_colors[:num_colors_needed]))
-
-
-        # Heatmap range - adjust dynamically or keep fixed
-        x_min, x_max = merged_df['STOCK_DIFF%'].min() - 1, merged_df['STOCK_DIFF%'].max() + 1
-        y_min, y_max = merged_df['SERVICE_DIFF%'].min() - 1, merged_df['SERVICE_DIFF%'].max() + 1
-        x_min = min(x_min, -14) # Ensure minimum range if desired
-        x_max = max(x_max, 1)
-        y_min = min(y_min, -14)
-        y_max = max(y_max, 1)
-
-        x = np.linspace(x_min, x_max, 200)
-        y = np.linspace(y_min, y_max, 200)
+        # --- Heatmap using Slider Limits ---
+        x = np.linspace(xlim_min, xlim_max, 200)
+        y = np.linspace(ylim_min, ylim_max, 200)
         X, Y = np.meshgrid(x, y)
-        Z = Y - X # Desirability heatmap
-
+        Z = Y - X # Simple desirability: higher Y (Service), lower X (Stock) is better
         ax.contourf(X, Y, Z, levels=100, cmap='RdYlGn', alpha=0.6)
+        # -----------------------------------
 
         # Scatter plot
         scatter = sns.scatterplot(
-            ax=ax, # Pass the ax object
+            ax=ax,
             data=merged_df,
             x='STOCK_DIFF%', y='SERVICE_DIFF%',
-            hue='LT_Percent', style='POLICY',
+            hue='LT_Percent', hue_order=lt_labels_unique, # Ensure consistent hue order
+            style='POLICY',
             s=200,
-            palette=lt_color_map, # Use the defined color map
+            palette=lt_color_map,
             edgecolor='black'
         )
 
@@ -117,147 +121,148 @@ def plot_relative_performance(merged_df,custom_title=None):
         ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
         ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
 
-        # Labels
-        # OLD: ax.set_title('Service Level and Inventory (%) Difference', fontsize=14)
-        # NEW: Determine title to use
-        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Service Level and Inventory (%) Difference'
+        # Labels and Title
+        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Relative Performance: Stock vs Service Level Difference (%)'
         ax.set_title(plot_title, fontsize=14)
-        ax.set_xlabel('Inventory Difference (%) (negative is better)', fontsize=12)
-        ax.set_ylabel('Service Level Difference (%) (positive is better)', fontsize=12)
+        ax.set_xlabel('Inventory Difference (%) (Negative is Better)', fontsize=12)
+        ax.set_ylabel('Service Level Difference (%) (Positive is Better)', fontsize=12)
 
         # === Custom Legends ===
         handles, labels = scatter.get_legend_handles_labels()
-        policy_labels = merged_df['POLICY'].unique()
-
-        # Separate handles/labels for color (LT) and style (POLICY)
-        # Legend needs careful reconstruction because seaborn combines hue and style
-        unique_lts = merged_df['LT_Percent'].unique()
+        # Filter handles/labels to create separate legends reliably
+        lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
+        # Get unique policies present in the data
         unique_policies = merged_df['POLICY'].unique()
-
-        lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in unique_lts]
-
-        # Recreate policy handles (find representative marker for each policy)
-        policy_handles_dict = {}
-        for h, l in zip(handles, labels):
-             # Seaborn labels might be tuples (LT, POLICY), need to extract POLICY
-             current_policy = l # Assuming label directly corresponds to POLICY based on 'style' usage
-             if isinstance(l, tuple): # If seaborn creates tuple labels
-                 current_policy = l[1] # Adjust index if needed
-
-             if current_policy in unique_policies and current_policy not in policy_handles_dict:
-                  policy_handles_dict[current_policy] = h
-
-        policy_handles_list = [policy_handles_dict[p] for p in unique_policies if p in policy_handles_dict]
-        policy_labels_list = [p for p in unique_policies if p in policy_handles_dict]
+        policy_handles = []
+        policy_labels_for_legend = []
+        # Iterate through known policies to find their corresponding handle
+        for policy in unique_policies:
+             try:
+                  # Find the first handle associated with this policy style
+                  idx = [l for l in labels if isinstance(l, str) and l==policy] # Handle cases where labels might not be simple strings
+                  # Need a better way if seaborn labels are complex tuples
+                  # Find index based on style mapping if possible (more robust but complex)
+                  # Simple approach: find first handle matching the policy label
+                  handle_found = False
+                  for h, l in zip(handles, labels):
+                       # Check if label matches or if it's a tuple where policy is part of it
+                       label_str = str(l) # Convert label to string for comparison
+                       if policy == label_str or (isinstance(l, tuple) and policy in l):
+                            if policy not in policy_labels_for_legend: # Add only once
+                                 policy_handles.append(h)
+                                 policy_labels_for_legend.append(policy)
+                                 handle_found = True
+                                 break
+                  # If no handle found via simple label match, might need more advanced logic
+                  # if not handle_found:
+                  #     print(f"Warning: Could not find legend handle for policy {policy}")
+             except Exception: # Catch potential errors during label processing
+                  print(f"Warning: Issue processing legend for policy {policy}")
+                  pass # Continue trying other policies
 
 
         # Add custom legends outside the plot
-        legend1 = ax.legend(handles=lt_patches, title='SL Target', bbox_to_anchor=(1.05, 1), loc='upper left')
+        legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.05, 1), loc='upper left')
         ax.add_artist(legend1)
-        ax.legend(handles=policy_handles_list, labels=policy_labels_list, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
+        # Only add policy legend if handles were found
+        if policy_handles:
+             ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
+        else: # Fallback or remove second legend call
+            pass # Or ax.get_legend().remove() if only one legend is desired
 
+
+        # --- Set Axis Limits using Slider Values ---
+        ax.set_xlim(xlim_min, xlim_max)
+        ax.set_ylim(ylim_min, ylim_max)
+        # -------------------------------------------
 
         ax.grid(True, linestyle='--')
-        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout to make space for legends
+        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout for external legends
 
-        return fig # Return the figure object
+        return fig
 
     except Exception as e:
         st.error(f"Error generating relative performance plot: {e}")
+        # st.code(traceback.format_exc()) # Uncomment for detailed debugging
         return None
 
-def plot_absolute_performance(input_df,custom_title=None): # Renamed parameter for clarity
-    """Generates the two plots from Cell 2. Works on a copy of the input DataFrame."""
+
+def plot_absolute_performance(input_df, custom_title=None):
+    """Generates the Absolute Performance plots (Inventory & Service Level)."""
     if input_df is None or input_df.empty:
         st.warning("Cannot generate absolute performance plots: No raw data available.")
         return None
 
-    # +++ Create a copy to work with +++
     df = input_df.copy()
-    # +++++++++++++++++++++++++++++++++++
-
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
     try:
-        # Ensure correct data types for plotting
-        df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce')
-        df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
-        # Drop rows where conversion failed for essential columns
-        df.dropna(subset=['POLICY', 'LT', 'STOCK', 'SERVICE_LEVEL'], inplace=True) # inplace=True modifies the copy 'df'
-
-        if df.empty:
-             st.warning("No valid data remaining after cleaning numeric columns.")
+        # Essential columns check
+        required_cols = {'POLICY', 'LT', 'SERVICE_LEVEL', 'STOCK'}
+        if not required_cols.issubset(df.columns):
+             st.error(f"Absolute plot requires columns: {required_cols}")
              return None
 
-        # --- Refined Category Handling ---
-        # Define the desired order
+        # Ensure correct data types
+        df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce')
+        df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
+        df['LT'] = df['LT'].astype(str) # Ensure LT is string before category handling
+        df.dropna(subset=['POLICY', 'LT', 'STOCK', 'SERVICE_LEVEL'], inplace=True)
+
+        if df.empty:
+             st.warning("No valid data remaining after cleaning for absolute plots.")
+             return None
+
+        # --- Category Handling for LT axis ---
         lt_full_order = ['LT1', 'LT2', 'LT3', 'LT4', 'LT5']
-        # Find which of the desired categories actually exist in the current data
-        existing_lts_in_order = [lt for lt in lt_full_order if lt in df['LT'].unique()]
-
-        if not existing_lts_in_order:
-             st.warning("No standard LT values (LT1-LT5) found for sorting. Using unique values found.")
-             # Use unique values found, trying to sort them alphanumerically as a fallback
-             lt_categories = sorted(df['LT'].unique())
-        else:
-             lt_categories = existing_lts_in_order # Use the subset in the predefined order
-
-        # Convert 'LT' column in the *copy* to Categorical
-        df['LT'] = pd.Categorical(df['LT'], categories=lt_categories, ordered=True)
-
-        # Sort the DataFrame based on the new categorical 'LT' column
-        df = df.sort_values('LT') # This also modifies the copy 'df'
-
-        # Map LT to Labels for the plot's x-axis
         lt_mapping = {'LT1': '88%', 'LT2': '90%', 'LT3': '92%', 'LT4': '94%', 'LT5': '96%'}
-        # Create the LT_Label column. Map known LTs, keep others as is.
-        df['LT_Label'] = df['LT'].map(lt_mapping)
-        df['LT_Label'].fillna(df['LT'].astype(str), inplace=True) # Fill missing mappings with original LT value (as string)
+        existing_lts_in_order = [lt for lt in lt_full_order if lt in df['LT'].unique()]
+        lt_categories = existing_lts_in_order if existing_lts_in_order else sorted(df['LT'].unique())
 
-        # Ensure the LT_Label is also categorical for correct plot axis order
+        df['LT'] = pd.Categorical(df['LT'], categories=lt_categories, ordered=True)
+        df = df.sort_values('LT')
+        df['LT_Label'] = df['LT'].map(lt_mapping).fillna(df['LT'].astype(str))
         label_order = [lt_mapping.get(cat, str(cat)) for cat in lt_categories]
         df['LT_Label'] = pd.Categorical(df['LT_Label'], categories=label_order, ordered=True)
-        # --- End Refined Category Handling ---
-
-
-        # Check if data remains after processing
-        if df.empty:
-            st.warning("Data became empty after processing categories. Cannot plot.")
-            return None
+        # --- End Category Handling ---
 
         # Plotting
         sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY', marker='o', linewidth=2)
-        #Remove axes[0].set_title('Absolute Inventory Levels by Policy')
         axes[0].set_xlabel('Service Level Target (%)')
         axes[0].set_ylabel('Inventory (Units)')
         axes[0].grid(True)
         axes[0].legend(title='Policy')
+        # Ensure y-axis starts at or near 0 if appropriate for stock
+        axes[0].set_ylim(bottom=0)
+
 
         sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
-        #Remove axes[1].set_title('Absolute Service Levels by Policy')
         axes[1].set_xlabel('Service Level Target (%)')
         axes[1].set_ylabel('Service Level')
         axes[1].grid(True)
         axes[1].legend(title='Policy')
-        # ADD before plt.tight_layout()
-        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
-        fig.suptitle(plot_title, fontsize=16, y=1.02) # y adjusts vertical position if needed
+        # Ensure y-axis for service level is appropriate (e.g., 0 to 1 or slightly wider)
+        min_sl = df['SERVICE_LEVEL'].min()
+        max_sl = df['SERVICE_LEVEL'].max()
+        axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05)) # Adjust padding as needed
 
-        # Adjust layout slightly to accommodate suptitle if necessary
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98]) # May need slight adjustment [left, bottom, right, top]
-        # OLD: plt.tight_layout()
-        return fig # Return the figure object
+
+        # --- Add Figure Title ---
+        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
+        fig.suptitle(plot_title, fontsize=16, y=1.02)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.98]) # Adjust layout for suptitle
+        # ------------------------
+
+        return fig
 
     except Exception as e:
         st.error(f"Error generating absolute performance plots: {e}")
-        # For more detailed debugging, you might want to print the traceback in your console
-        import traceback
-        print(traceback.format_exc()) # Print detailed error to console where streamlit runs
+        # st.code(traceback.format_exc()) # Uncomment for detailed debugging
         return None
 
 
-def plot_quadrant_analysis(merged_df, custom_title=None):
-    """Generates the plot from Cell 3."""
+def plot_quadrant_analysis(merged_df, custom_title=None, xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5):
+    """Generates the Quadrant Analysis plot with dynamic axis limits."""
     if merged_df is None or merged_df.empty:
         st.warning("Cannot generate quadrant analysis plot: No processed data available.")
         return None
@@ -265,128 +270,118 @@ def plot_quadrant_analysis(merged_df, custom_title=None):
     fig, ax = plt.subplots(figsize=(10, 7))
 
     try:
-        # Filter data for the scatter plot (negative quadrant)
-        filtered_df = merged_df[(merged_df['SERVICE_DIFF%'] < 0) & (merged_df['STOCK_DIFF%'] < 0)].copy() # Use .copy()
+        # Filter data for scatter plot (optional, could plot all points)
+        # For this plot, often focus is on points where changes occurred
+        # Let's plot all points from merged_df for context, not just negative quadrant
+        # filtered_df = merged_df[(merged_df['SERVICE_DIFF%'] < 0) & (merged_df['STOCK_DIFF%'] < 0)].copy()
+        plot_data_df = merged_df # Plot all points from the difference calculation
 
-        if filtered_df.empty:
-            st.info("No data points fall in the negative quadrant (Stock Diff % < 0 and Service Diff % < 0).")
-            # Optionally still show the heatmap without scatter points
-        else:
-             st.info(f"Plotting {len(filtered_df)} points in the negative quadrant.")
-
-
-        # Define distinct colors (same logic as relative plot)
-        lt_labels_unique = merged_df['LT_Percent'].unique()
+        # Define distinct colors (consistent with relative plot)
+        lt_labels_unique = sorted(plot_data_df['LT_Percent'].unique())
         num_colors_needed = len(lt_labels_unique)
-        if num_colors_needed <= 5:
-             distinct_colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00']
-        else:
-             cmap = plt.get_cmap('tab10')
-             distinct_colors = [cmap(i) for i in np.linspace(0, 1, num_colors_needed)]
-        lt_color_map = dict(zip(lt_labels_unique, distinct_colors[:num_colors_needed]))
+        palette = sns.color_palette('tab10', n_colors=max(num_colors_needed, 10))
+        distinct_colors = palette[:num_colors_needed]
+        lt_color_map = dict(zip(lt_labels_unique, distinct_colors))
 
-        # --- Heatmap Calculation ---
-        # Use data ranges from the full merged_df for consistency or from filtered_df
-        x_min, x_max = merged_df['STOCK_DIFF%'].min() -1, merged_df['STOCK_DIFF%'].max() + 1
-        y_min, y_max = merged_df['SERVICE_DIFF%'].min() - 1, merged_df['SERVICE_DIFF%'].max() + 1
-        # Keep desired negative focus if needed, but allow seeing all data context
-        x_min = min(x_min, -14); x_max = max(x_max, 1)
-        y_min = min(y_min, -14); y_max = max(y_max, 1)
-
+        # --- Heatmap Calculation using Slider Limits ---
         grid_size = 300
-        x_grid = np.linspace(x_min, x_max, grid_size)
-        y_grid = np.linspace(y_min, y_max, grid_size)
+        x_grid = np.linspace(xlim_min, xlim_max, grid_size)
+        y_grid = np.linspace(ylim_min, ylim_max, grid_size)
         X, Y = np.meshgrid(x_grid, y_grid)
 
-        # Desirability logic
-        stock_score = np.zeros_like(X)
-        stock_score[X <= -6] = 1
-        mask = (X > -6) & (X <= 0)
-        stock_score[mask] = (np.abs(X[mask]) / 6)
+        # Desirability logic (applied across the slider range)
+        stock_score = np.zeros_like(X); service_score = np.zeros_like(Y)
+        stock_score[X <= -6] = 1 # Max score for >=6% reduction
+        mask_stock = (X > -6) & (X <= 0)
+        stock_score[mask_stock] = (np.abs(X[mask_stock]) / 6) # Linear scale 0-6% reduction
         stock_score = np.clip(stock_score, 0, 1)
 
-        service_score = np.zeros_like(Y)
-        # Adjust service score: better if Y is close to 0 or positive
-        service_score[Y >= 0] = 1 # Full score if service level improved or stayed same
-        mask_neg = (Y < 0) & (Y >= y_min)
-        # Score decreases as Y becomes more negative. Scale from 0 at y_min to 1 at 0.
-        service_score[mask_neg] = 1 - (np.abs(Y[mask_neg]) / np.abs(y_min)) # Assumes y_min is the worst case
+        service_score[Y >= 0] = 1 # Max score for no service drop or improvement
+        # Define a reasonable 'worst' service drop for scaling, e.g., y_min slider value
+        worst_service_drop = abs(ylim_min) if ylim_min < 0 else 1 # Avoid division by zero if ylim_min >= 0
+        mask_serv = (Y < 0) & (Y >= ylim_min)
+        service_score[mask_serv] = 1 - (np.abs(Y[mask_serv]) / worst_service_drop) # Linear scale from y_min to 0
         service_score = np.clip(service_score, 0, 1)
+        Z = stock_score * service_score
+        # -------------------------------------------
 
-
-        Z = stock_score * service_score # Combine scores
-
-        # Plot heatmap
-        img = ax.imshow(Z, extent=[x_min, x_max, y_min, y_max],
+        # Plot heatmap using limits for extent
+        img = ax.imshow(Z, extent=[xlim_min, xlim_max, ylim_min, ylim_max],
                       origin='lower', cmap='RdYlGn', aspect='auto', alpha=0.6)
 
-        # --- Overlay scatterplot (only if filtered_df is not empty) ---
-        if not filtered_df.empty:
+        # --- Overlay scatterplot (Plot all points) ---
+        if not plot_data_df.empty:
              scatter = sns.scatterplot(
                  ax=ax,
-                 data=filtered_df, # Use filtered data
+                 data=plot_data_df, # Use all processed data
                  x='STOCK_DIFF%', y='SERVICE_DIFF%',
-                 hue='LT_Percent', style='POLICY', s=200,
-                 palette=lt_color_map, # Use same colors
+                 hue='LT_Percent', hue_order=lt_labels_unique,
+                 style='POLICY', s=200,
+                 palette=lt_color_map,
                  edgecolor='black'
              )
         else:
-             scatter = None # No scatter object if no points
-
+             scatter = None
+             st.info("No data points to plot.")
 
         # Quadrant axes
         ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
         ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
 
-        # Hatched pattern (optional styling)
+        # Optional hatched background (can be removed if distracting)
         ax.add_patch(
             mpatches.Rectangle(
-                (x_min, y_min), x_max - x_min, y_max - y_min,
-                hatch='///', fill=False, edgecolor='black', linewidth=0, alpha=0.05
+                (xlim_min, ylim_min), xlim_max - xlim_min, ylim_max - ylim_min,
+                hatch='///', fill=False, edgecolor='gray', linewidth=0, alpha=0.05
             )
         )
 
-        # Axes and legend
-        # OLD: ax.set_title('Quadrant Analysis: Focus on Negative Differences', fontsize=14)
-        # NEW: Determine title to use
-        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Quadrant Analysis: Focus on Negative Differences'
+        # Axes, Title, and Legend
+        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Quadrant Analysis: Stock vs Service Level Difference (%)'
         ax.set_title(plot_title, fontsize=14)
         ax.set_xlabel('Inventory Difference (%)', fontsize=12)
         ax.set_ylabel('Service Level Difference (%)', fontsize=12)
 
-        # === Custom Legends (only if scatter plot was created) ===
+        # === Custom Legends (similar to relative plot) ===
         if scatter:
              handles, labels = scatter.get_legend_handles_labels()
-             unique_lts = filtered_df['LT_Percent'].unique() # Use LTs present in filtered data
-             unique_policies = filtered_df['POLICY'].unique() # Use Policies present in filtered data
+             lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
+             unique_policies = plot_data_df['POLICY'].unique()
+             policy_handles = []
+             policy_labels_for_legend = []
+             for policy in unique_policies:
+                 try:
+                      handle_found = False
+                      for h, l in zip(handles, labels):
+                           label_str = str(l)
+                           if policy == label_str or (isinstance(l, tuple) and policy in l):
+                                if policy not in policy_labels_for_legend:
+                                     policy_handles.append(h)
+                                     policy_labels_for_legend.append(policy)
+                                     handle_found = True
+                                     break
+                 except Exception: pass
 
-             lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in unique_lts if lt in lt_color_map]
-
-             policy_handles_dict = {}
-             for h, l in zip(handles, labels):
-                 current_policy = l
-                 if isinstance(l, tuple):
-                     current_policy = l[1]
-                 if current_policy in unique_policies and current_policy not in policy_handles_dict:
-                     policy_handles_dict[current_policy] = h
-
-             policy_handles_list = [policy_handles_dict[p] for p in unique_policies if p in policy_handles_dict]
-             policy_labels_list = [p for p in unique_policies if p in policy_handles_dict]
-
-             legend1 = ax.legend(handles=lt_patches, title='SL Target', bbox_to_anchor=(1.05, 1), loc='upper left')
+             legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.05, 1), loc='upper left')
              ax.add_artist(legend1)
-             ax.legend(handles=policy_handles_list, labels=policy_labels_list, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
+             if policy_handles:
+                  ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
+             else: pass
 
+
+        # --- Set Axis Limits using Slider Values ---
+        ax.set_xlim(xlim_min, xlim_max)
+        ax.set_ylim(ylim_min, ylim_max)
+        # -------------------------------------------
 
         ax.grid(True, linestyle='--')
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout
+        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout for external legends
 
         return fig
 
     except Exception as e:
         st.error(f"Error generating quadrant analysis plot: {e}")
+        # st.code(traceback.format_exc()) # Uncomment for detailed debugging
         return None
 
 
@@ -394,83 +389,72 @@ def plot_quadrant_analysis(merged_df, custom_title=None):
 
 st.title("Inventory Policy Analysis Dashboard")
 
+# --- Sidebar for Data Input ---
 st.sidebar.header("Data Input")
 
-# --- Method 1: Paste into Text Area (Works when Deployed) ---
+# Method 1: Paste into Text Area
 st.sidebar.subheader("Paste Data from Excel")
-st.sidebar.info("Copy your data range from Excel (including headers), then paste into the text area below and click 'Load'.")
-pasted_text = st.sidebar.text_area("Paste tab-separated data here:", height=150, key="pasted_text_area")
+st.sidebar.info("Copy data range (incl. headers), paste below, then click 'Load'.")
+# Initialize session state for the text area if it doesn't exist
+if 'pasted_text_area' not in st.session_state:
+    st.session_state.pasted_text_area = ""
+# Text Area Widget - its value is linked to the key in session state
+pasted_text_widget_value = st.sidebar.text_area(
+    "Paste tab-separated data here:",
+    key="pasted_text_area", # Important: links to st.session_state.pasted_text_area
+    height=150
+)
+# Load Button for Text Area
 if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
-    if pasted_text:
+    # Access the text via session state using the key
+    current_pasted_text = st.session_state.pasted_text_area
+    if current_pasted_text:
         try:
-            string_io = io.StringIO(pasted_text)
-            # Use read_csv, assuming tab separation from Excel copy/paste
+            string_io = io.StringIO(current_pasted_text)
             text_data = pd.read_csv(string_io, sep='\t', header=0, engine='python', on_bad_lines='warn')
             if text_data is not None and not text_data.empty:
                 st.session_state['raw_df'] = text_data
-                # Perform calculations immediately after loading if desired
                 st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
-                st.sidebar.success(f"Successfully loaded {len(text_data)} rows from text area.")
-                # Clear the text area after successful load (optional)
-                # st.session_state.pasted_text_area = "" -- Removed because of streamlit error
+                st.sidebar.success(f"Loaded {len(text_data)} rows from text.")
+                # Do NOT clear st.session_state.pasted_text_area here
             else:
-                 st.sidebar.error("Could not parse data from text area.")
-                 # Clear potentially outdated data if load fails
+                 st.sidebar.error("Could not parse text or data is empty.")
                  if 'raw_df' in st.session_state: del st.session_state['raw_df']
                  if 'merged_df' in st.session_state: del st.session_state['merged_df']
         except Exception as e:
-            st.sidebar.error(f"Error parsing text area data: {e}")
+            st.sidebar.error(f"Error parsing text area: {e}")
             if 'raw_df' in st.session_state: del st.session_state['raw_df']
             if 'merged_df' in st.session_state: del st.session_state['merged_df']
     else:
         st.sidebar.warning("Text area is empty.")
 
-# --- REMOVED Direct Clipboard Button ---
-# The following button and logic relying on pd.read_clipboard()
-# will NOT work in deployed environments and should be removed.
-#
-# st.sidebar.markdown("---")
-# st.sidebar.info("Copy your data range from Excel (including headers), then click the button below.")
-# if st.sidebar.button("Load Data from Clipboard"):
-#     try:
-#         clipboard_data = pd.read_clipboard(header=0, sep='\t', engine='python', on_bad_lines='warn')
-#         # ... (rest of clipboard logic) ...
-#     except Exception as e:
-#         # This is where the Pyperclip error occurs when deployed
-#         st.sidebar.error(f"Error reading from clipboard: {e}. Is data copied correctly (tab-separated)?")
-#         # ...
-
 st.sidebar.markdown("---") # Separator
 
-# --- Method 2: File Uploader (Optional but Recommended) ---
+# Method 2: File Uploader
 st.sidebar.subheader("Upload File")
 uploaded_file = st.sidebar.file_uploader(
-    "Upload an Excel (.xlsx) or CSV (.csv) file:",
-    type=["csv", "xlsx", "xls"] # Specify allowed file types
+    "Upload Excel (.xlsx) or CSV (.csv):",
+    type=["csv", "xlsx", "xls"]
 )
 if uploaded_file is not None:
     try:
-        # Determine file type and read accordingly
+        file_data = None # Initialize file_data
         if uploaded_file.name.endswith('.csv'):
             file_data = pd.read_csv(uploaded_file)
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            # Might need to install openpyxl: pip install openpyxl
-            # Add 'openpyxl' to requirements.txt if using Excel upload
+            # Requires openpyxl - ensure it's in requirements.txt
             file_data = pd.read_excel(uploaded_file, engine='openpyxl')
-        else:
-            # Should not happen due to 'type' restriction, but good practice
-             st.sidebar.error("Unsupported file type.")
-             file_data = None
 
         if file_data is not None and not file_data.empty:
             st.session_state['raw_df'] = file_data
-            # Perform calculations immediately after loading if desired
             st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
-            st.sidebar.success(f"Successfully loaded {len(file_data)} rows from file: {uploaded_file.name}")
-        elif file_data is not None: # Handle case where file is empty but read ok
-             st.sidebar.warning(f"Uploaded file '{uploaded_file.name}' appears to be empty.")
+            st.sidebar.success(f"Loaded {len(file_data)} rows from: {uploaded_file.name}")
+        elif file_data is not None:
+             st.sidebar.warning(f"File '{uploaded_file.name}' is empty.")
              if 'raw_df' in st.session_state: del st.session_state['raw_df']
              if 'merged_df' in st.session_state: del st.session_state['merged_df']
+        else:
+            st.sidebar.error("Could not read the uploaded file.") # Handle cases where file_data remains None
 
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
@@ -481,84 +465,104 @@ if uploaded_file is not None:
 # --- Main Display Area ---
 if 'raw_df' in st.session_state:
     st.header("Loaded Data Preview")
-    # Limit preview height if desired
     st.dataframe(st.session_state['raw_df'].head(), height=200)
 
     st.header("Analysis Plots")
-    st.markdown("---") # Add a horizontal rule
+    st.markdown("---")
 
-    # --- Plot Selection ---
-    plot_choice = st.selectbox(
-        "Choose Plot:",
-        ["Relative Performance (vs Baseline)", "Absolute Performance", "Quadrant Analysis"],
-        key="plot_select" # Using a key is good practice
-    )
-
-    # +++ Add Text Input for Custom Title +++
-    custom_title_input = st.text_input(
-        "Enter custom graph title (optional):",
-        placeholder="Leave empty to use default title", # Placeholder text
-        key="custom_title_input"
-    )
-    # Get the title from the input, treat empty or whitespace-only as None
+    # --- Plot Controls ---
+    control_col1, control_col2 = st.columns([0.6, 0.4]) # Adjust column widths as needed
+    with control_col1:
+        plot_choice = st.selectbox(
+            "Choose Plot:",
+            ["Relative Performance (vs Baseline)", "Absolute Performance", "Quadrant Analysis"],
+            key="plot_select"
+        )
+    with control_col2:
+        custom_title_input = st.text_input(
+            "Custom graph title (optional):",
+            placeholder="Uses default if empty",
+            key="custom_title_input"
+        )
     user_title = custom_title_input.strip() if custom_title_input else None
-    # ++++++++++++++++++++++++++++++++++++++++++
+
+    # --- Axis Limit Controls (Conditional) ---
+    show_sliders = plot_choice in ["Relative Performance (vs Baseline)", "Quadrant Analysis"]
+    limits_valid = True # Assume valid initially
+    if show_sliders:
+        st.markdown("---")
+        st.subheader("Axis Limits")
+        limit_col1, limit_col2 = st.columns(2)
+        with limit_col1:
+            x_min_limit = st.slider("X-Axis Min (%)", -50, 50, -14, 1, key="x_min_slider")
+            y_min_limit = st.slider("Y-Axis Min (%)", -50, 50, -14, 1, key="y_min_slider")
+        with limit_col2:
+            x_max_limit = st.slider("X-Axis Max (%)", -50, 50, 5, 1, key="x_max_slider")
+            y_max_limit = st.slider("Y-Axis Max (%)", -50, 50, 5, 1, key="y_max_slider")
+
+        # Validate limits
+        if x_min_limit >= x_max_limit or y_min_limit >= y_max_limit:
+            st.error("Axis Min limit must be strictly less than Max limit.")
+            limits_valid = False
+        st.markdown("---")
+    else:
+        # Define placeholders if sliders not shown (won't be used by absolute plot)
+        x_min_limit, x_max_limit = -14, 5
+        y_min_limit, y_max_limit = -14, 5
 
 
     # --- Display Chosen Plot ---
     if plot_choice == "Relative Performance (vs Baseline)":
-        if 'merged_df' in st.session_state:
-            st.subheader("Relative Performance")
-            # Pass the user_title to the plotting function
-            fig1 = plot_relative_performance(st.session_state['merged_df'], custom_title=user_title)
-            if fig1:
-                st.pyplot(fig1)
-            else:
-                 st.warning("Could not generate relative performance plot.") # Handle function returning None
+        if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
+            if limits_valid:
+                st.subheader("Relative Performance")
+                fig1 = plot_relative_performance(
+                    st.session_state['merged_df'], custom_title=user_title,
+                    xlim_min=x_min_limit, xlim_max=x_max_limit,
+                    ylim_min=y_min_limit, ylim_max=y_max_limit
+                )
+                if fig1: st.pyplot(fig1)
+                else: st.warning("Could not generate relative performance plot.")
+            # Error message handled by slider validation section
         else:
-            st.warning("Baseline calculations failed or data not loaded. Cannot show relative plot.")
+            st.warning("Data not processed for relative plot. Load data and ensure 'BSL' policy exists.")
 
     elif plot_choice == "Absolute Performance":
+        # Absolute plot doesn't use the limit sliders
         st.subheader("Absolute Performance")
-        # Pass the user_title to the plotting function
         fig2 = plot_absolute_performance(st.session_state['raw_df'], custom_title=user_title)
-        if fig2:
-            st.pyplot(fig2)
-        else:
-            st.warning("Could not generate absolute performance plot.") # Handle function returning None
-
+        if fig2: st.pyplot(fig2)
+        else: st.warning("Could not generate absolute performance plot.")
 
     elif plot_choice == "Quadrant Analysis":
-         if 'merged_df' in st.session_state:
-            st.subheader("Quadrant Analysis")
-            # Pass the user_title to the plotting function
-            fig3 = plot_quadrant_analysis(st.session_state['merged_df'], custom_title=user_title)
-            if fig3:
-                st.pyplot(fig3)
-            else:
-                st.warning("Could not generate quadrant analysis plot.") # Handle function returning None
+         if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
+             if limits_valid:
+                st.subheader("Quadrant Analysis")
+                fig3 = plot_quadrant_analysis(
+                    st.session_state['merged_df'], custom_title=user_title,
+                    xlim_min=x_min_limit, xlim_max=x_max_limit,
+                    ylim_min=y_min_limit, ylim_max=y_max_limit
+                )
+                if fig3: st.pyplot(fig3)
+                else: st.warning("Could not generate quadrant analysis plot.")
+             # Error message handled by slider validation section
          else:
-            st.warning("Baseline calculations failed or data not loaded. Cannot show quadrant plot.")
+            st.warning("Data not processed for quadrant plot. Load data and ensure 'BSL' policy exists.")
 
+# Initial State Message (if no data is loaded yet)
 else:
-    st.info("Please load data using the sidebar options.")
+    st.info("Welcome! Please load data using the sidebar options (Paste or Upload).")
     st.markdown("---")
     st.subheader("Expected Data Format")
     st.markdown("""
-    The application expects data with at least the following columns:
-    - `POLICY`: Text identifier for the policy (e.g., 'BSL', 'IDL'). Must include 'BSL' for baseline calculations.
-    - `LT`: Text identifier for the lead time scenario (e.g., 'LT1', 'LT2').
-    - `SERVICE_LEVEL`: Numeric service level achieved (e.g., 0.876).
+    - `POLICY`: Text identifier (e.g., 'BSL', 'IDL'). Include 'BSL' for baseline.
+    - `LT`: Text identifier (e.g., 'LT1', 'LT2').
+    - `SERVICE_LEVEL`: Numeric service level (e.g., 0.876 or 87.6).
     - `STOCK`: Numeric stock level (e.g., 2862.495).
-
-    Copy the range directly from Excel, including the header row.
     """)
-    # Display the sample data structure as a guide
-    st.subheader("Example Data Structure:")
+    st.subheader("Example:")
     sample_data = {
-         'POLICY': ['BSL', 'IDL', 'BSL', 'IDL'],
-         'LT': ['LT1', 'LT1', 'LT2', 'LT2'],
-         'SERVICE_LEVEL': [0.88, 0.85, 0.90, 0.88],
-         'STOCK': [1000, 950, 1200, 1100]
+        'POLICY': ['BSL', 'IDL', 'BSL', 'IDL'], 'LT': ['LT1', 'LT1', 'LT2', 'LT2'],
+        'SERVICE_LEVEL': [0.88, 0.85, 0.90, 0.88], 'STOCK': [1000, 950, 1200, 1100]
     }
     st.dataframe(pd.DataFrame(sample_data))
