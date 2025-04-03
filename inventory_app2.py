@@ -512,13 +512,19 @@ if 'raw_df' in st.session_state:
                 st.subheader("Relative Performance")
                 fig1 = plot_relative_performance( st.session_state['merged_df'], custom_title=user_title,
                     xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit )
-                if fig1: st.pyplot(fig1) else: st.warning("Could not generate relative plot.")
+                if fig1:
+                    st.pyplot(fig1) 
+                else: 
+                    st.warning("Could not generate relative plot.")
         else: st.warning("Data not processed for relative plot. Load/process data first.")
 
     elif plot_choice == "Absolute Performance":
         st.subheader("Absolute Performance")
         fig2 = plot_absolute_performance(st.session_state['raw_df'], custom_title=user_title)
-        if fig2: st.pyplot(fig2) else: st.warning("Could not generate absolute plot.")
+        if fig2: 
+            st.pyplot(fig2) 
+        else: 
+            st.warning("Could not generate absolute plot.")
 
     elif plot_choice == "Quadrant Analysis":
          if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
@@ -527,7 +533,10 @@ if 'raw_df' in st.session_state:
                 fig3 = plot_quadrant_analysis( st.session_state['merged_df'], custom_title=user_title,
                     xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                     stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param )
-                if fig3: st.pyplot(fig3) else: st.warning("Could not generate quadrant plot.")
+                if fig3: 
+                    st.pyplot(fig3) 
+                else: 
+                    st.warning("Could not generate quadrant plot.")
          else: st.warning("Data not processed for quadrant plot. Load/process data first.")
 
 # Initial State Message
