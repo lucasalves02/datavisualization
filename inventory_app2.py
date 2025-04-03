@@ -82,7 +82,7 @@ def plot_relative_performance(merged_df, custom_title=None,
         unique_policies = merged_df['POLICY'].unique(); policy_handles = []; policy_labels_for_legend = []
         # This logic to extract policy handles might need refinement depending on seaborn version/label format
         temp_legend = ax.legend(handles=handles, labels=labels) # Create temporary legend to extract styled handles
-        policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legend_handles, temp_legend.get_texts()) if l.get_label() in unique_policies}
+        policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legendHandles, temp_legend.get_texts()) if l.get_label() in unique_policies}
         temp_legend.remove() # Remove temporary legend
         for policy in unique_policies: # Ensure order
              if policy in policy_handle_map:
@@ -214,7 +214,7 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
              lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
              unique_policies = plot_data_df['POLICY'].unique(); policy_handles = []; policy_labels_for_legend = []
              # Refined handle extraction
-             temp_legend = ax.legend(handles=handles, labels=labels); policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legend_handles, temp_legend.get_texts()) if l.get_label() in unique_policies} ; temp_legend.remove()
+             temp_legend = ax.legend(handles=handles, labels=labels); policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legendHandles, temp_legend.get_texts()) if l.get_label() in unique_policies} ; temp_legend.remove()
              for policy in unique_policies:
                   if policy in policy_handle_map: policy_handles.append(policy_handle_map[policy]); policy_labels_for_legend.append(policy)
 
