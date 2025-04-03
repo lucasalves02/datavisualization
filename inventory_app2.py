@@ -82,7 +82,7 @@ def plot_relative_performance(merged_df, custom_title=None,
         unique_policies = merged_df['POLICY'].unique(); policy_handles = []; policy_labels_for_legend = []
         # This logic to extract policy handles might need refinement depending on seaborn version/label format
         temp_legend = ax.legend(handles=handles, labels=labels) # Create temporary legend to extract styled handles
-        policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legendHandles, temp_legend.get_texts()) if l.get_label() in unique_policies}
+        policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legend_handles, temp_legend.get_texts()) if l.get_label() in unique_policies}
         temp_legend.remove() # Remove temporary legend
         for policy in unique_policies: # Ensure order
              if policy in policy_handle_map:
