@@ -396,53 +396,86 @@ st.title("Inventory Policy Analysis Dashboard")
 
 st.sidebar.header("Data Input")
 
-# Option 1: Paste from Clipboard Button
-st.sidebar.info("Copy your data range from Excel (including headers), then click the button below.")
-if st.sidebar.button("Load Data from Clipboard"):
-    try:
-        # Use 'header=0' to ensure the first row is read as headers
-        clipboard_data = pd.read_clipboard(header=0, sep='\t', engine='python', on_bad_lines='warn')
-        if clipboard_data is not None and not clipboard_data.empty:
-            st.session_state['raw_df'] = clipboard_data # Store in session state
-            st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
-            st.sidebar.success(f"Successfully loaded {len(clipboard_data)} rows.")
-        else:
-            st.sidebar.error("Could not read data from clipboard or clipboard is empty.")
-            # Clear potentially outdated data if load fails
-            if 'raw_df' in st.session_state: del st.session_state['raw_df']
-            if 'merged_df' in st.session_state: del st.session_state['merged_df']
-
-    except Exception as e:
-        st.sidebar.error(f"Error reading from clipboard: {e}. Is data copied correctly (tab-separated)?")
-        # Clear potentially outdated data if load fails
-        if 'raw_df' in st.session_state: del st.session_state['raw_df']
-        if 'merged_df' in st.session_state: del st.session_state['merged_df']
-
-# Option 2: Text Area Input (Alternative/Backup)
-st.sidebar.markdown("---")
-st.sidebar.subheader("Or Paste Data Here:")
-pasted_text = st.sidebar.text_area("Paste tab-separated data here (including headers)", height=150)
-if st.sidebar.button("Load Data from Text Area"):
+# --- Method 1: Paste into Text Area (Works when Deployed) ---
+st.sidebar.subheader("Paste Data from Excel")
+st.sidebar.info("Copy your data range from Excel (including headers), then paste into the text area below and click 'Load'.")
+pasted_text = st.sidebar.text_area("Paste tab-separated data here:", height=150, key="pasted_text_area")
+if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
     if pasted_text:
         try:
-            # Use io.StringIO to treat the string as a file
             string_io = io.StringIO(pasted_text)
+            # Use read_csv, assuming tab separation from Excel copy/paste
             text_data = pd.read_csv(string_io, sep='\t', header=0, engine='python', on_bad_lines='warn')
             if text_data is not None and not text_data.empty:
                 st.session_state['raw_df'] = text_data
+                # Perform calculations immediately after loading if desired
                 st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
                 st.sidebar.success(f"Successfully loaded {len(text_data)} rows from text area.")
+                # Clear the text area after successful load (optional)
+                st.session_state.pasted_text_area = ""
             else:
                  st.sidebar.error("Could not parse data from text area.")
+                 # Clear potentially outdated data if load fails
                  if 'raw_df' in st.session_state: del st.session_state['raw_df']
                  if 'merged_df' in st.session_state: del st.session_state['merged_df']
-
         except Exception as e:
             st.sidebar.error(f"Error parsing text area data: {e}")
             if 'raw_df' in st.session_state: del st.session_state['raw_df']
             if 'merged_df' in st.session_state: del st.session_state['merged_df']
     else:
         st.sidebar.warning("Text area is empty.")
+
+# --- REMOVED Direct Clipboard Button ---
+# The following button and logic relying on pd.read_clipboard()
+# will NOT work in deployed environments and should be removed.
+#
+# st.sidebar.markdown("---")
+# st.sidebar.info("Copy your data range from Excel (including headers), then click the button below.")
+# if st.sidebar.button("Load Data from Clipboard"):
+#     try:
+#         clipboard_data = pd.read_clipboard(header=0, sep='\t', engine='python', on_bad_lines='warn')
+#         # ... (rest of clipboard logic) ...
+#     except Exception as e:
+#         # This is where the Pyperclip error occurs when deployed
+#         st.sidebar.error(f"Error reading from clipboard: {e}. Is data copied correctly (tab-separated)?")
+#         # ...
+
+st.sidebar.markdown("---") # Separator
+
+# --- Method 2: File Uploader (Optional but Recommended) ---
+st.sidebar.subheader("Upload File")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload an Excel (.xlsx) or CSV (.csv) file:",
+    type=["csv", "xlsx", "xls"] # Specify allowed file types
+)
+if uploaded_file is not None:
+    try:
+        # Determine file type and read accordingly
+        if uploaded_file.name.endswith('.csv'):
+            file_data = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
+            # Might need to install openpyxl: pip install openpyxl
+            # Add 'openpyxl' to requirements.txt if using Excel upload
+            file_data = pd.read_excel(uploaded_file, engine='openpyxl')
+        else:
+            # Should not happen due to 'type' restriction, but good practice
+             st.sidebar.error("Unsupported file type.")
+             file_data = None
+
+        if file_data is not None and not file_data.empty:
+            st.session_state['raw_df'] = file_data
+            # Perform calculations immediately after loading if desired
+            st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
+            st.sidebar.success(f"Successfully loaded {len(file_data)} rows from file: {uploaded_file.name}")
+        elif file_data is not None: # Handle case where file is empty but read ok
+             st.sidebar.warning(f"Uploaded file '{uploaded_file.name}' appears to be empty.")
+             if 'raw_df' in st.session_state: del st.session_state['raw_df']
+             if 'merged_df' in st.session_state: del st.session_state['merged_df']
+
+    except Exception as e:
+        st.sidebar.error(f"Error reading file: {e}")
+        if 'raw_df' in st.session_state: del st.session_state['raw_df']
+        if 'merged_df' in st.session_state: del st.session_state['merged_df']
 
 
 # --- Main Display Area ---
