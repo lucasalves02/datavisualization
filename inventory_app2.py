@@ -138,14 +138,8 @@ def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_m
         # Iterate through known policies to find their corresponding handle
         for policy in unique_policies:
              try:
-                  # Find the first handle associated with this policy style
-                  idx = [l for l in labels if isinstance(l, str) and l==policy] # Handle cases where labels might not be simple strings
-                  # Need a better way if seaborn labels are complex tuples
-                  # Find index based on style mapping if possible (more robust but complex)
-                  # Simple approach: find first handle matching the policy label
                   handle_found = False
                   for h, l in zip(handles, labels):
-                       # Check if label matches or if it's a tuple where policy is part of it
                        label_str = str(l) # Convert label to string for comparison
                        if policy == label_str or (isinstance(l, tuple) and policy in l):
                             if policy not in policy_labels_for_legend: # Add only once
@@ -153,13 +147,7 @@ def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_m
                                  policy_labels_for_legend.append(policy)
                                  handle_found = True
                                  break
-                  # If no handle found via simple label match, might need more advanced logic
-                  # if not handle_found:
-                  #     print(f"Warning: Could not find legend handle for policy {policy}")
-             except Exception: # Catch potential errors during label processing
-                  print(f"Warning: Issue processing legend for policy {policy}")
-                  pass # Continue trying other policies
-
+             except Exception: pass # Catch potential errors during label processing
 
         # Add custom legends outside the plot
         legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -167,9 +155,7 @@ def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_m
         # Only add policy legend if handles were found
         if policy_handles:
              ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
-        else: # Fallback or remove second legend call
-            pass # Or ax.get_legend().remove() if only one legend is desired
-
+        else: pass # Or ax.get_legend().remove() if only one legend is desired
 
         # --- Set Axis Limits using Slider Values ---
         ax.set_xlim(xlim_min, xlim_max)
@@ -232,25 +218,21 @@ def plot_absolute_performance(input_df, custom_title=None):
         axes[0].set_ylabel('Inventory (Units)')
         axes[0].grid(True)
         axes[0].legend(title='Policy')
-        # Ensure y-axis starts at or near 0 if appropriate for stock
-        axes[0].set_ylim(bottom=0)
-
+        axes[0].set_ylim(bottom=0) # Start y-axis at 0 for stock
 
         sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
         axes[1].set_xlabel('Service Level Target (%)')
         axes[1].set_ylabel('Service Level')
         axes[1].grid(True)
         axes[1].legend(title='Policy')
-        # Ensure y-axis for service level is appropriate (e.g., 0 to 1 or slightly wider)
         min_sl = df['SERVICE_LEVEL'].min()
         max_sl = df['SERVICE_LEVEL'].max()
-        axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05)) # Adjust padding as needed
-
+        axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05)) # Sensible SL limits
 
         # --- Add Figure Title ---
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
         fig.suptitle(plot_title, fontsize=16, y=1.02)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98]) # Adjust layout for suptitle
+        plt.tight_layout(rect=[0, 0.03, 1, 0.98])
         # ------------------------
 
         return fig
@@ -261,88 +243,93 @@ def plot_absolute_performance(input_df, custom_title=None):
         return None
 
 
-def plot_quadrant_analysis(merged_df, custom_title=None, xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5):
-    """Generates the Quadrant Analysis plot with dynamic axis limits."""
+def plot_quadrant_analysis(merged_df, custom_title=None,
+                           xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5,
+                           stock_target_thresh=-6.0, service_target_thresh=0.0, service_floor_thresh=-10.0): # Added desirability params
+    """Generates the Quadrant Analysis plot with dynamic axis limits and desirability logic."""
     if merged_df is None or merged_df.empty:
         st.warning("Cannot generate quadrant analysis plot: No processed data available.")
         return None
 
+    # Basic validation of desirability params relative to axis limits
+    if service_floor_thresh < ylim_min:
+        st.warning(f"Service floor threshold ({service_floor_thresh}%) is below Y-axis minimum ({ylim_min}%). Heatmap scaling might be affected.")
+    if stock_target_thresh < xlim_min:
+         st.warning(f"Stock target threshold ({stock_target_thresh}%) is below X-axis minimum ({xlim_min}%). Heatmap scaling might be affected.")
+
     fig, ax = plt.subplots(figsize=(10, 7))
 
     try:
-        # Filter data for scatter plot (optional, could plot all points)
-        # For this plot, often focus is on points where changes occurred
-        # Let's plot all points from merged_df for context, not just negative quadrant
-        # filtered_df = merged_df[(merged_df['SERVICE_DIFF%'] < 0) & (merged_df['STOCK_DIFF%'] < 0)].copy()
-        plot_data_df = merged_df # Plot all points from the difference calculation
+        plot_data_df = merged_df # Use all processed data points for scatter
 
-        # Define distinct colors (consistent with relative plot)
+        # Color definition (consistent with relative plot)
         lt_labels_unique = sorted(plot_data_df['LT_Percent'].unique())
         num_colors_needed = len(lt_labels_unique)
         palette = sns.color_palette('tab10', n_colors=max(num_colors_needed, 10))
         distinct_colors = palette[:num_colors_needed]
         lt_color_map = dict(zip(lt_labels_unique, distinct_colors))
 
-        # --- Heatmap Calculation using Slider Limits ---
+        # --- Heatmap Calculation using Slider Limits AND Desirability Params ---
         grid_size = 300
         x_grid = np.linspace(xlim_min, xlim_max, grid_size)
         y_grid = np.linspace(ylim_min, ylim_max, grid_size)
         X, Y = np.meshgrid(x_grid, y_grid)
 
-        # Desirability logic (applied across the slider range)
+        # --- Updated Desirability logic using parameters ---
         stock_score = np.zeros_like(X); service_score = np.zeros_like(Y)
-        stock_score[X <= -6] = 1 # Max score for >=6% reduction
-        mask_stock = (X > -6) & (X <= 0)
-        stock_score[mask_stock] = (np.abs(X[mask_stock]) / 6) # Linear scale 0-6% reduction
+
+        # Stock Score Calculation using stock_target_thresh
+        stock_score[X <= stock_target_thresh] = 1
+        mask_stock = (X > stock_target_thresh) & (X <= 0)
+        stock_score_range = abs(stock_target_thresh)
+        if stock_score_range > 1e-6: # Avoid division by zero
+             stock_score[mask_stock] = np.abs(X[mask_stock]) / stock_score_range
         stock_score = np.clip(stock_score, 0, 1)
 
-        service_score[Y >= 0] = 1 # Max score for no service drop or improvement
-        # Define a reasonable 'worst' service drop for scaling, e.g., y_min slider value
-        worst_service_drop = abs(ylim_min) if ylim_min < 0 else 1 # Avoid division by zero if ylim_min >= 0
-        mask_serv = (Y < 0) & (Y >= ylim_min)
-        service_score[mask_serv] = 1 - (np.abs(Y[mask_serv]) / worst_service_drop) # Linear scale from y_min to 0
+        # Service Score Calculation using service_target_thresh and service_floor_thresh
+        service_score[Y >= service_target_thresh] = 1
+        service_score_range = service_target_thresh - service_floor_thresh
+        if service_score_range > 1e-6: # Ensure floor < target
+            mask_serv = (Y < service_target_thresh) & (Y >= service_floor_thresh)
+            service_score[mask_serv] = (Y[mask_serv] - service_floor_thresh) / service_score_range
         service_score = np.clip(service_score, 0, 1)
+
+        # Combined Score
         Z = stock_score * service_score
-        # -------------------------------------------
+        # --- End Updated Desirability logic ---
 
         # Plot heatmap using limits for extent
         img = ax.imshow(Z, extent=[xlim_min, xlim_max, ylim_min, ylim_max],
                       origin='lower', cmap='RdYlGn', aspect='auto', alpha=0.6)
 
-        # --- Overlay scatterplot (Plot all points) ---
+        # --- Overlay scatterplot ---
         if not plot_data_df.empty:
              scatter = sns.scatterplot(
-                 ax=ax,
-                 data=plot_data_df, # Use all processed data
+                 ax=ax, data=plot_data_df,
                  x='STOCK_DIFF%', y='SERVICE_DIFF%',
                  hue='LT_Percent', hue_order=lt_labels_unique,
                  style='POLICY', s=200,
-                 palette=lt_color_map,
-                 edgecolor='black'
+                 palette=lt_color_map, edgecolor='black'
              )
         else:
              scatter = None
              st.info("No data points to plot.")
 
-        # Quadrant axes
+        # --- Axes, Title, Legend ---
         ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
         ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
-
-        # Optional hatched background (can be removed if distracting)
         ax.add_patch(
             mpatches.Rectangle(
                 (xlim_min, ylim_min), xlim_max - xlim_min, ylim_max - ylim_min,
                 hatch='///', fill=False, edgecolor='gray', linewidth=0, alpha=0.05
             )
         )
-
-        # Axes, Title, and Legend
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Quadrant Analysis: Stock vs Service Level Difference (%)'
         ax.set_title(plot_title, fontsize=14)
         ax.set_xlabel('Inventory Difference (%)', fontsize=12)
         ax.set_ylabel('Service Level Difference (%)', fontsize=12)
 
-        # === Custom Legends (similar to relative plot) ===
+        # Legends (similar to relative plot)
         if scatter:
              handles, labels = scatter.get_legend_handles_labels()
              lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
@@ -361,21 +348,18 @@ def plot_quadrant_analysis(merged_df, custom_title=None, xlim_min=-14, xlim_max=
                                      handle_found = True
                                      break
                  except Exception: pass
-
              legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.05, 1), loc='upper left')
              ax.add_artist(legend1)
              if policy_handles:
                   ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
              else: pass
+        # --- End Legends ---
 
-
-        # --- Set Axis Limits using Slider Values ---
+        # --- Set Axis Limits ---
         ax.set_xlim(xlim_min, xlim_max)
         ax.set_ylim(ylim_min, ylim_max)
-        # -------------------------------------------
-
         ax.grid(True, linestyle='--')
-        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout for external legends
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
 
         return fig
 
@@ -383,7 +367,6 @@ def plot_quadrant_analysis(merged_df, custom_title=None, xlim_min=-14, xlim_max=
         st.error(f"Error generating quadrant analysis plot: {e}")
         # st.code(traceback.format_exc()) # Uncomment for detailed debugging
         return None
-
 
 # --- Streamlit App Layout ---
 
@@ -395,18 +378,11 @@ st.sidebar.header("Data Input")
 # Method 1: Paste into Text Area
 st.sidebar.subheader("Paste Data from Excel")
 st.sidebar.info("Copy data range (incl. headers), paste below, then click 'Load'.")
-# Initialize session state for the text area if it doesn't exist
-if 'pasted_text_area' not in st.session_state:
-    st.session_state.pasted_text_area = ""
-# Text Area Widget - its value is linked to the key in session state
+if 'pasted_text_area' not in st.session_state: st.session_state.pasted_text_area = ""
 pasted_text_widget_value = st.sidebar.text_area(
-    "Paste tab-separated data here:",
-    key="pasted_text_area", # Important: links to st.session_state.pasted_text_area
-    height=150
+    "Paste tab-separated data here:", key="pasted_text_area", height=150
 )
-# Load Button for Text Area
 if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
-    # Access the text via session state using the key
     current_pasted_text = st.session_state.pasted_text_area
     if current_pasted_text:
         try:
@@ -416,7 +392,6 @@ if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
                 st.session_state['raw_df'] = text_data
                 st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
                 st.sidebar.success(f"Loaded {len(text_data)} rows from text.")
-                # Do NOT clear st.session_state.pasted_text_area here
             else:
                  st.sidebar.error("Could not parse text or data is empty.")
                  if 'raw_df' in st.session_state: del st.session_state['raw_df']
@@ -428,22 +403,20 @@ if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
     else:
         st.sidebar.warning("Text area is empty.")
 
-st.sidebar.markdown("---") # Separator
+st.sidebar.markdown("---")
 
 # Method 2: File Uploader
 st.sidebar.subheader("Upload File")
 uploaded_file = st.sidebar.file_uploader(
-    "Upload Excel (.xlsx) or CSV (.csv):",
-    type=["csv", "xlsx", "xls"]
+    "Upload Excel (.xlsx) or CSV (.csv):", type=["csv", "xlsx", "xls"]
 )
 if uploaded_file is not None:
     try:
-        file_data = None # Initialize file_data
+        file_data = None
         if uploaded_file.name.endswith('.csv'):
             file_data = pd.read_csv(uploaded_file)
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            # Requires openpyxl - ensure it's in requirements.txt
-            file_data = pd.read_excel(uploaded_file, engine='openpyxl')
+            file_data = pd.read_excel(uploaded_file, engine='openpyxl') # Requires openpyxl
 
         if file_data is not None and not file_data.empty:
             st.session_state['raw_df'] = file_data
@@ -454,13 +427,12 @@ if uploaded_file is not None:
              if 'raw_df' in st.session_state: del st.session_state['raw_df']
              if 'merged_df' in st.session_state: del st.session_state['merged_df']
         else:
-            st.sidebar.error("Could not read the uploaded file.") # Handle cases where file_data remains None
+            st.sidebar.error("Could not read the uploaded file format.")
 
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
         if 'raw_df' in st.session_state: del st.session_state['raw_df']
         if 'merged_df' in st.session_state: del st.session_state['merged_df']
-
 
 # --- Main Display Area ---
 if 'raw_df' in st.session_state:
@@ -471,25 +443,24 @@ if 'raw_df' in st.session_state:
     st.markdown("---")
 
     # --- Plot Controls ---
-    control_col1, control_col2 = st.columns([0.6, 0.4]) # Adjust column widths as needed
+    control_col1, control_col2 = st.columns([0.6, 0.4])
     with control_col1:
-        plot_choice = st.selectbox(
-            "Choose Plot:",
-            ["Relative Performance (vs Baseline)", "Absolute Performance", "Quadrant Analysis"],
-            key="plot_select"
+        plot_choice = st.selectbox("Choose Plot:",
+            ["Relative Performance (vs Baseline)", "Absolute Performance", "Quadrant Analysis"], key="plot_select"
         )
     with control_col2:
-        custom_title_input = st.text_input(
-            "Custom graph title (optional):",
-            placeholder="Uses default if empty",
-            key="custom_title_input"
+        custom_title_input = st.text_input("Custom graph title (optional):",
+            placeholder="Uses default if empty", key="custom_title_input"
         )
     user_title = custom_title_input.strip() if custom_title_input else None
 
     # --- Axis Limit Controls (Conditional) ---
-    show_sliders = plot_choice in ["Relative Performance (vs Baseline)", "Quadrant Analysis"]
-    limits_valid = True # Assume valid initially
-    if show_sliders:
+    show_diff_plot_controls = plot_choice in ["Relative Performance (vs Baseline)", "Quadrant Analysis"]
+    limits_valid = True # Flag for validation checks
+    # Define defaults or get from sliders
+    x_min_limit, x_max_limit = -14, 5
+    y_min_limit, y_max_limit = -14, 5
+    if show_diff_plot_controls:
         st.markdown("---")
         st.subheader("Axis Limits")
         limit_col1, limit_col2 = st.columns(2)
@@ -499,57 +470,67 @@ if 'raw_df' in st.session_state:
         with limit_col2:
             x_max_limit = st.slider("X-Axis Max (%)", -50, 50, 5, 1, key="x_max_slider")
             y_max_limit = st.slider("Y-Axis Max (%)", -50, 50, 5, 1, key="y_max_slider")
-
-        # Validate limits
         if x_min_limit >= x_max_limit or y_min_limit >= y_max_limit:
             st.error("Axis Min limit must be strictly less than Max limit.")
             limits_valid = False
+
+    # --- Desirability Controls (Conditional for Quadrant Plot) ---
+    stock_target_thresh_param = -6.0 # Default value
+    service_target_thresh_param = 0.0 # Default value
+    service_floor_thresh_param = -10.0 # Default value
+    if plot_choice == "Quadrant Analysis":
+        # st.markdown("---") # Separator already added by axis limits if shown
+        st.subheader("Desirability Logic Parameters")
+        des_col1, des_col2, des_col3 = st.columns(3)
+        with des_col1:
+            stock_target_reduc_input = st.number_input( "Stock Reduction for Max Score (%):",
+                min_value=0.1, max_value=50.0, value=6.0, step=0.5, format="%.1f",
+                help="Stock reduction at or beyond this value gets full score (e.g., 6 means -6%).", key="stock_target_reduc"
+            )
+            stock_target_thresh_param = -abs(stock_target_reduc_input)
+        with des_col2:
+            service_target_thresh_param = st.number_input("Service Level for Max Score (%):",
+                min_value=-20.0, max_value=20.0, value=0.0, step=0.5, format="%.1f",
+                help="Service level change at or above this value gets full score.", key="service_target_level"
+            )
+        with des_col3:
+            service_floor_thresh_param = st.number_input("Service Level for Zero Score (%):",
+                min_value=-50.0, max_value=-0.1, value=-10.0, step=0.5, format="%.1f",
+                help="Service level change at or below this value gets zero score (must be negative).", key="service_floor_level"
+            )
+        if service_floor_thresh_param >= service_target_thresh_param:
+            st.error("Desirability Error: Service 'Zero Score Level' must be less than 'Max Score Level'.")
+            limits_valid = False # Prevent plot generation if desirability params invalid
         st.markdown("---")
-    else:
-        # Define placeholders if sliders not shown (won't be used by absolute plot)
-        x_min_limit, x_max_limit = -14, 5
-        y_min_limit, y_max_limit = -14, 5
 
 
     # --- Display Chosen Plot ---
+    # Check if data needed for the plot is available and parameters are valid
     if plot_choice == "Relative Performance (vs Baseline)":
         if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
             if limits_valid:
                 st.subheader("Relative Performance")
-                fig1 = plot_relative_performance(
-                    st.session_state['merged_df'], custom_title=user_title,
-                    xlim_min=x_min_limit, xlim_max=x_max_limit,
-                    ylim_min=y_min_limit, ylim_max=y_max_limit
-                )
-                if fig1: st.pyplot(fig1)
-                else: st.warning("Could not generate relative performance plot.")
-            # Error message handled by slider validation section
-        else:
-            st.warning("Data not processed for relative plot. Load data and ensure 'BSL' policy exists.")
+                fig1 = plot_relative_performance( st.session_state['merged_df'], custom_title=user_title,
+                    xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit )
+                if fig1: st.pyplot(fig1) else: st.warning("Could not generate relative plot.")
+        else: st.warning("Data not processed for relative plot. Load/process data first.")
 
     elif plot_choice == "Absolute Performance":
-        # Absolute plot doesn't use the limit sliders
         st.subheader("Absolute Performance")
         fig2 = plot_absolute_performance(st.session_state['raw_df'], custom_title=user_title)
-        if fig2: st.pyplot(fig2)
-        else: st.warning("Could not generate absolute performance plot.")
+        if fig2: st.pyplot(fig2) else: st.warning("Could not generate absolute plot.")
 
     elif plot_choice == "Quadrant Analysis":
          if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
-             if limits_valid:
+             if limits_valid: # Checks both axis and desirability params validity
                 st.subheader("Quadrant Analysis")
-                fig3 = plot_quadrant_analysis(
-                    st.session_state['merged_df'], custom_title=user_title,
-                    xlim_min=x_min_limit, xlim_max=x_max_limit,
-                    ylim_min=y_min_limit, ylim_max=y_max_limit
-                )
-                if fig3: st.pyplot(fig3)
-                else: st.warning("Could not generate quadrant analysis plot.")
-             # Error message handled by slider validation section
-         else:
-            st.warning("Data not processed for quadrant plot. Load data and ensure 'BSL' policy exists.")
+                fig3 = plot_quadrant_analysis( st.session_state['merged_df'], custom_title=user_title,
+                    xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
+                    stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param )
+                if fig3: st.pyplot(fig3) else: st.warning("Could not generate quadrant plot.")
+         else: st.warning("Data not processed for quadrant plot. Load/process data first.")
 
-# Initial State Message (if no data is loaded yet)
+# Initial State Message
 else:
     st.info("Welcome! Please load data using the sidebar options (Paste or Upload).")
     st.markdown("---")
