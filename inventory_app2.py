@@ -183,7 +183,7 @@ def plot_absolute_performance(input_df, custom_title=None):
         axes[0].set_ylabel('Inventory (Units)')     # Font size is default
         axes[0].grid(True)
         axes[0].legend(title='Policy') # Internal legend, default font size
-        axes[0].set_ylim(bottom=0)
+    # axes[0].set_ylim(bottom=0)
 
         sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
         axes[1].set_xlabel('Service Level Target (%)') # Font size is default
@@ -192,7 +192,7 @@ def plot_absolute_performance(input_df, custom_title=None):
         axes[1].legend(title='Policy') # Internal legend, default font size
         min_sl = df['SERVICE_LEVEL'].min()
         max_sl = df['SERVICE_LEVEL'].max()
-        axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
+    # axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
 
         # Add Figure Title (Fixed font size)
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
