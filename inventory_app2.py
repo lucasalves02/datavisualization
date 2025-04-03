@@ -48,12 +48,12 @@ def perform_baseline_calculations(df):
 
 def plot_relative_performance(merged_df, custom_title=None,
                               xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5,
-                              figure_width=10.0, figure_height=8.0, # Changed default figsize
+                              figure_width=10.0, figure_height=8.0,
                               title_axis_fontsize=12, legend_fontsize=9):
-    """Generates the Relative Performance plot with bottom legend."""
+    """Generates the Relative Performance plot with side legends."""
     if merged_df is None or merged_df.empty: st.warning("No processed data for relative plot."); return None
 
-    fig, ax = plt.subplots(figsize=(figure_width, figure_height)) # Use new default figsize
+    fig, ax = plt.subplots(figsize=(figure_width, figure_height))
     try:
         # Color definition...
         lt_labels_unique = sorted(merged_df['LT_Percent'].unique())
@@ -74,65 +74,60 @@ def plot_relative_performance(merged_df, custom_title=None,
         ax.set_ylabel('Service Level Difference (%) (Positive is Better)', fontsize=title_axis_fontsize)
         ax.tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
 
-        # === Combine Legends for Bottom Placement ===
+        # === Revert to Separate Legends on Right ===
         handles, labels = scatter.get_legend_handles_labels()
-        # Get SL Target handles (patches)
+        # Create patches for SL Target legend
         lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
-        # Get Policy handles (markers)
+        # Extract policy handles/labels (using corrected attribute name)
         unique_policies = merged_df['POLICY'].unique(); policy_handles = []; policy_labels_for_legend = []
-        # This logic to extract policy handles might need refinement depending on seaborn version/label format
-        temp_legend = ax.legend(handles=handles, labels=labels) # Create temporary legend to extract styled handles
-        policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legendHandles, temp_legend.get_texts()) if l.get_label() in unique_policies}
-        temp_legend.remove() # Remove temporary legend
-        for policy in unique_policies: # Ensure order
-             if policy in policy_handle_map:
-                  policy_handles.append(policy_handle_map[policy])
-                  policy_labels_for_legend.append(policy)
+        try: # Use try-except for robustness
+             temp_legend = ax.legend(handles=handles, labels=labels) # Temporary legend
+             policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legend_handles, temp_legend.get_texts()) if l.get_label() in unique_policies}
+             temp_legend.remove() # Remove temporary
+             for policy in unique_policies: # Ensure order
+                  if policy in policy_handle_map: policy_handles.append(policy_handle_map[policy]); policy_labels_for_legend.append(policy)
+        except Exception as legend_e:
+             print(f"Warning: Could not extract all policy legend handles reliably. Error: {legend_e}")
+             # Fallback: might show combined legend or just SL target if policy extraction fails
+             policy_handles = [] # Clear handles if extraction failed
 
-        # Combine all handles and labels
-        all_handles = lt_patches + policy_handles
-        all_labels = [p.get_label() for p in lt_patches] + policy_labels_for_legend
+        # Create first legend (SL Target) and add manually
+        legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', # Title here
+                            bbox_to_anchor=(1.03, 1), loc='upper left',
+                            fontsize=legend_fontsize, title_fontsize=legend_fontsize) # Apply font sizes
+        ax.add_artist(legend1)
 
-        # Remove the old separate legend calls and ax.add_artist
-        # legend1 = ax.legend(...)
-        # ax.add_artist(legend1)
-        # if policy_handles: ax.legend(...)
+        # Create second legend (Policy) if handles found
+        if policy_handles:
+            ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policies', # Title here
+                      bbox_to_anchor=(1.03, 0.55), loc='upper left',
+                      fontsize=legend_fontsize, title_fontsize=legend_fontsize) # Apply font sizes
+        # === End Reverted Legend Code ===
 
-        # Create single legend at the bottom
-        if all_handles:
-            ax.legend(all_handles, all_labels,
-                      loc='upper center', # Anchor point on the legend
-                      bbox_to_anchor=(0.5, -0.15), # Position: 0.5=center horizontally, -0.15=below axes
-                      ncol=max(len(lt_patches), len(policy_handles)), # Arrange in columns horizontally
-                      fontsize=legend_fontsize, title_fontsize=legend_fontsize) # Apply legend size
+        # --- Use Manual Axes Positioning ---
+        # Adjust width (e.g., 0.65) as needed to fit legends based on figsize and fonts
+        ax.set_position([0.1, 0.1, 0.65, 0.8]) # [left, bottom, width, height]
 
-        # --- Remove Manual Axes Positioning ---
-        # ax.set_position([0.1, 0.1, 0.65, 0.8]) # REMOVED
+        # --- Ensure tight_layout is NOT used ---
+        # plt.tight_layout(...) # REMOVED / COMMENTED OUT
 
         # --- Set Axis Limits & Grid ---
         ax.set_xlim(xlim_min, xlim_max); ax.set_ylim(ylim_min, ylim_max)
         ax.grid(True, linestyle='--')
         # -----------------------------
 
-        # --- Use Figure-level tight_layout AFTER legend placement ---
-        try:
-             fig.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust rect bottom/top if needed for legend/title space
-        except ValueError: # Handle potential tight_layout errors
-             plt.subplots_adjust(bottom=0.2, top=0.9) # Manual adjustment as fallback
-
         return fig
     except Exception as e: st.error(f"Error generating relative plot: {e}"); return None
 
 
 def plot_absolute_performance(input_df, custom_title=None,
-                              figure_width=10.0, figure_height=8.0, # Changed default figsize
+                              figure_width=10.0, figure_height=8.0,
                               title_axis_fontsize=12, legend_fontsize=9):
     """Generates the Absolute Performance plots with dynamic sizes."""
-    # This plot's legends are typically inside, no changes needed for bottom placement unless desired.
-    # Keeping original legend logic for this one.
+    # Keep original legend logic here (inside plot)
     if input_df is None or input_df.empty: st.warning("No raw data for absolute plot."); return None
     df = input_df.copy()
-    fig, axes = plt.subplots(1, 2, figsize=(figure_width, figure_height)) # Use new default figsize
+    fig, axes = plt.subplots(1, 2, figsize=(figure_width, figure_height))
     try:
         # Data processing... (remains the same)
         required_cols = {'POLICY', 'LT', 'SERVICE_LEVEL', 'STOCK'};
@@ -160,18 +155,18 @@ def plot_absolute_performance(input_df, custom_title=None,
         # Figure Title & Layout...
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
         fig.suptitle(plot_title, fontsize=title_axis_fontsize + 2, y=1.02)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98]) # Keep standard tight_layout
+        plt.tight_layout(rect=[0, 0.03, 1, 0.98]) # Use standard tight_layout here
 
         return fig
     except Exception as e: st.error(f"Error generating absolute plots: {e}"); return None
 
-# ++ Add fontsize parameters ++
+
 def plot_quadrant_analysis(merged_df, custom_title=None,
                            xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5,
                            stock_target_thresh=-6.0, service_target_thresh=0.0, service_floor_thresh=-10.0,
                            figure_width=10.0, figure_height=8.0, # Changed default figsize
                            title_axis_fontsize=12, legend_fontsize=9):
-    """Generates the Quadrant Analysis plot with bottom legend."""
+    """Generates the Quadrant Analysis plot with side legends."""
     if merged_df is None or merged_df.empty: st.warning("No processed data for quadrant plot."); return None
     if service_floor_thresh < ylim_min: st.warning(f"Service floor ({service_floor_thresh}%) < Y-min ({ylim_min}%).")
     if stock_target_thresh < xlim_min: st.warning(f"Stock target ({stock_target_thresh}%) < X-min ({xlim_min}%).")
@@ -202,46 +197,51 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
         # Axes, Title setup...
         ax.axhline(0, color='black', linewidth=0.8, linestyle='--'); ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
         ax.add_patch(mpatches.Rectangle((xlim_min, ylim_min), xlim_max - xlim_min, ylim_max - ylim_min, hatch='///', fill=False, edgecolor='gray', linewidth=0, alpha=0.05))
-        # Apply font sizes
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Quadrant Analysis: Stock vs Service Level Difference (%)'
         ax.set_title(plot_title, fontsize=title_axis_fontsize + 2); ax.set_xlabel('Inventory Difference (%)', fontsize=title_axis_fontsize)
         ax.set_ylabel('Service Level Difference (%)', fontsize=title_axis_fontsize)
         ax.tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
 
-        # === Combine Legends for Bottom Placement ===
+        # === Revert to Separate Legends on Right ===
         if scatter:
              handles, labels = scatter.get_legend_handles_labels()
+             # Create patches for SL Target legend
              lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
+             # Extract policy handles/labels (using corrected attribute name)
              unique_policies = plot_data_df['POLICY'].unique(); policy_handles = []; policy_labels_for_legend = []
-             # Refined handle extraction
-             temp_legend = ax.legend(handles=handles, labels=labels); policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legendHandles, temp_legend.get_texts()) if l.get_label() in unique_policies} ; temp_legend.remove()
-             for policy in unique_policies:
-                  if policy in policy_handle_map: policy_handles.append(policy_handle_map[policy]); policy_labels_for_legend.append(policy)
+             try: # Use try-except for robustness
+                  temp_legend = ax.legend(handles=handles, labels=labels) # Temporary legend
+                  policy_handle_map = {l.get_label(): h for h, l in zip(temp_legend.legend_handles, temp_legend.get_texts()) if l.get_label() in unique_policies}
+                  temp_legend.remove() # Remove temporary
+                  for policy in unique_policies: # Ensure order
+                       if policy in policy_handle_map: policy_handles.append(policy_handle_map[policy]); policy_labels_for_legend.append(policy)
+             except Exception as legend_e:
+                  print(f"Warning: Could not extract all policy legend handles reliably. Error: {legend_e}")
+                  policy_handles = [] # Clear handles if extraction failed
 
-             all_handles = lt_patches + policy_handles
-             all_labels = [p.get_label() for p in lt_patches] + policy_labels_for_legend
+             # Create first legend (SL Target) and add manually
+             legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', # Title here
+                                 bbox_to_anchor=(1.03, 1), loc='upper left',
+                                 fontsize=legend_fontsize, title_fontsize=legend_fontsize) # Apply font sizes
+             ax.add_artist(legend1)
 
-             # Remove old legend calls if any were missed (like ax.add_artist)
-             # ax.add_artist(...) # REMOVED
+             # Create second legend (Policy) if handles found
+             if policy_handles:
+                 ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policies', # Title here
+                           bbox_to_anchor=(1.03, 0.55), loc='upper left',
+                           fontsize=legend_fontsize, title_fontsize=legend_fontsize) # Apply font sizes
+        # === End Reverted Legend Code ===
 
-             # Create single legend at the bottom
-             if all_handles:
-                ax.legend(all_handles, all_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), # Adjust y (-0.15) if needed
-                          ncol=max(len(lt_patches), len(policy_handles)), fontsize=legend_fontsize, title_fontsize=legend_fontsize)
+        # --- Use Manual Axes Positioning ---
+        ax.set_position([0.1, 0.1, 0.65, 0.8]) # Adjust width (0.65) as needed
 
-        # --- Remove Manual Axes Positioning ---
-        # ax.set_position([0.1, 0.1, 0.65, 0.8]) # REMOVED
+        # --- Ensure tight_layout is NOT used ---
+        # plt.tight_layout(...) # REMOVED / COMMENTED OUT
 
         # --- Set Axis Limits & Grid ---
         ax.set_xlim(xlim_min, xlim_max); ax.set_ylim(ylim_min, ylim_max)
         ax.grid(True, linestyle='--')
         # -----------------------------
-
-        # --- Use Figure-level tight_layout AFTER legend placement ---
-        try:
-             fig.tight_layout(rect=[0, 0.05, 1, 0.95]) # Adjust rect bottom/top for legend/title space
-        except ValueError:
-             plt.subplots_adjust(bottom=0.25, top=0.9) # Manual adjustment fallback
 
         return fig
     except Exception as e: st.error(f"Error generating quadrant plot: {e}"); return None
@@ -252,9 +252,8 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
 st.title("Inventory Policy Analysis Dashboard")
 
 # --- Sidebar for Data Input ---
+# ... [Sidebar code remains unchanged] ...
 st.sidebar.header("Data Input")
-# (Sidebar code remains unchanged - Text Area & File Upload)
-# ... [Same sidebar code as before] ...
 st.sidebar.subheader("Paste Data from Excel")
 st.sidebar.info("Copy data range (incl. headers), paste below, then click 'Load'.")
 if 'pasted_text_area' not in st.session_state: st.session_state.pasted_text_area = ""
@@ -308,7 +307,6 @@ if 'raw_df' in st.session_state:
     st.header("Plot Configuration")
     st.markdown("---")
 
-    # --- Plot Controls ---
     # Row 1: Plot Choice and Title Input
     control_col1, control_col2 = st.columns([0.6, 0.4])
     with control_col1: plot_choice = st.selectbox("Choose Plot:", ["Relative Performance (vs Baseline)", "Absolute Performance", "Quadrant Analysis"], key="plot_select")
@@ -318,9 +316,9 @@ if 'raw_df' in st.session_state:
     # Row 2: Figure Size Controls
     st.subheader("Figure Size (inches)")
     size_col1, size_col2 = st.columns(2)
-    # ++ Update default figure size ++
-    with size_col1: fig_width = st.slider("Width:", min_value=6.0, max_value=20.0, value=10.0, step=0.5, key="fig_width_slider", format="%.1f")
-    with size_col2: fig_height = st.slider("Height:", min_value=4.0, max_value=15.0, value=8.0, step=0.5, key="fig_height_slider", format="%.1f")
+    # ++ Changed default figure size ++
+    with size_col1: fig_width = st.slider("Width:", min_value=6.0, max_value=20.0, value=10.0, step=0.5, key="fig_width_slider", format="%.1f") # Default 10
+    with size_col2: fig_height = st.slider("Height:", min_value=4.0, max_value=15.0, value=8.0, step=0.5, key="fig_height_slider", format="%.1f") # Default 8
 
     # Row 3: Font Size Controls
     st.subheader("Font Sizes")
@@ -330,13 +328,12 @@ if 'raw_df' in st.session_state:
 
     # --- Conditional Controls: Axis Limits & Desirability ---
     show_diff_plot_controls = plot_choice in ["Relative Performance (vs Baseline)", "Quadrant Analysis"]
-    limits_valid = True # Flag for validation checks
+    limits_valid = True
     x_min_limit, x_max_limit = -14, 5; y_min_limit, y_max_limit = -14, 5 # Defaults
     stock_target_thresh_param = -6.0; service_target_thresh_param = 0.0; service_floor_thresh_param = -10.0 # Defaults
 
     if show_diff_plot_controls:
-        st.markdown("---")
-        st.subheader("Axis Limits")
+        st.markdown("---"); st.subheader("Axis Limits")
         limit_col1, limit_col2 = st.columns(2)
         with limit_col1: x_min_limit = st.slider("X-Axis Min (%)", -50, 50, -14, 1, key="x_min_slider"); y_min_limit = st.slider("Y-Axis Min (%)", -50, 50, -14, 1, key="y_min_slider")
         with limit_col2: x_max_limit = st.slider("X-Axis Max (%)", -50, 50, 5, 1, key="x_max_slider"); y_max_limit = st.slider("Y-Axis Max (%)", -50, 50, 5, 1, key="y_max_slider")
@@ -349,36 +346,45 @@ if 'raw_df' in st.session_state:
         with des_col2: service_target_thresh_param = st.number_input("Service Level for Max Score (%):", min_value=-20.0, max_value=20.0, value=0.0, step=0.5, format="%.1f", help="Service change at/above this gets full score.", key="service_target_level")
         with des_col3: service_floor_thresh_param = st.number_input("Service Level for Zero Score (%):", min_value=-50.0, max_value=-0.1, value=-10.0, step=0.5, format="%.1f", help="Service change at/below this gets zero score.", key="service_floor_level")
         if service_floor_thresh_param >= service_target_thresh_param: st.error("Desirability Error: Service 'Zero Score Level' must be less than 'Max Score Level'."); limits_valid = False
-    st.markdown("---") # Separator after all controls
+    st.markdown("---")
+
 
     # --- Display Chosen Plot ---
-    st.header("Generated Plot") # Add header for the plot itself
+    st.header("Generated Plot")
     fig_to_show = None; plot_error = False
     try:
-        # Pass figure size and font sizes to ALL plot functions
+        # Pass all relevant parameters from UI controls
+        common_params = {
+            "custom_title": user_title,
+            "figure_width": fig_width,
+            "figure_height": fig_height,
+            "title_axis_fontsize": title_axis_font_size,
+            "legend_fontsize": legend_font_size
+        }
+        diff_plot_params = {
+            **common_params,
+            "xlim_min": x_min_limit, "xlim_max": x_max_limit,
+            "ylim_min": y_min_limit, "ylim_max": y_max_limit
+        }
+        quadrant_params = {
+            **diff_plot_params,
+            "stock_target_thresh": stock_target_thresh_param,
+            "service_target_thresh": service_target_thresh_param,
+            "service_floor_thresh": service_floor_thresh_param
+        }
+
         if plot_choice == "Relative Performance (vs Baseline)":
             if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
-                if limits_valid:
-                    fig_to_show = plot_relative_performance(st.session_state['merged_df'], custom_title=user_title,
-                        xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
-                        figure_width=fig_width, figure_height=fig_height,
-                        title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
+                if limits_valid: fig_to_show = plot_relative_performance(st.session_state['merged_df'], **diff_plot_params)
                 else: plot_error = True
             else: st.warning("Data not processed for relative plot.")
 
         elif plot_choice == "Absolute Performance":
-            fig_to_show = plot_absolute_performance(st.session_state['raw_df'], custom_title=user_title,
-                        figure_width=fig_width, figure_height=fig_height,
-                        title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
+            fig_to_show = plot_absolute_performance(st.session_state['raw_df'], **common_params)
 
         elif plot_choice == "Quadrant Analysis":
              if 'merged_df' in st.session_state and st.session_state['merged_df'] is not None:
-                 if limits_valid:
-                    fig_to_show = plot_quadrant_analysis(st.session_state['merged_df'], custom_title=user_title,
-                        xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
-                        stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param,
-                        figure_width=fig_width, figure_height=fig_height,
-                        title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
+                 if limits_valid: fig_to_show = plot_quadrant_analysis(st.session_state['merged_df'], **quadrant_params)
                  else: plot_error = True
              else: st.warning("Data not processed for quadrant plot.")
 
