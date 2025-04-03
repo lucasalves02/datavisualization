@@ -418,7 +418,7 @@ if 'raw_df' in st.session_state:
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
                 if limits_valid:
                     st.subheader("Relative Performance")
-                    # Call LATEST relative function
+                    # Call LATEST relative function (includes custom_title if needed elsewhere)
                     fig_to_show = plot_relative_performance(merged_df_state, custom_title=user_title,
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 figure_width=fig_width, figure_height=fig_height,
@@ -435,14 +435,12 @@ if 'raw_df' in st.session_state:
             raw_df_state = st.session_state.get('raw_df')
             if isinstance(raw_df_state, pd.DataFrame) and not raw_df_state.empty:
                 st.subheader("Absolute Performance")
-                # --- MODIFIED CALL for previous function ---
-                st.info("Note: Figure size and font size sliders do not affect this specific plot version.")
+                st.info("Note: Figure size, font size sliders, and custom title input do not affect this specific plot version.")
+                # --- CORRECTED CALL: Only pass raw_df_state ---
                 fig_to_show = plot_absolute_performance(
-                                raw_df_state,               # Pass the dataframe
-                                custom_title=user_title     # Pass the custom title
-                                # Do NOT pass width, height, or font sizes
+                                raw_df_state # Pass only the dataframe
                                 )
-                # --- End MODIFIED CALL ---
+                # --- End CORRECTED CALL ---
             else:
                  st.warning("Load data for absolute plot.")
 
@@ -452,7 +450,7 @@ if 'raw_df' in st.session_state:
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
                 if limits_valid:
                     st.subheader("Quadrant Analysis")
-                    # Call LATEST quadrant function
+                    # Call LATEST quadrant function (includes custom_title if needed elsewhere)
                     fig_to_show = plot_quadrant_analysis(merged_df_state, custom_title=user_title,
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param,
