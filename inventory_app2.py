@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Apr  2 20:31:44 2025
+Created on Wed Apr  3 14:00:00 2025
 Streamlit Inventory Policy Analysis Dashboard
 @author: lucas
 """
@@ -23,7 +23,6 @@ st.set_page_config(layout="wide") # Use wider layout
 def perform_baseline_calculations(df):
     """Takes the raw DataFrame and returns the merged_df with diff %."""
     try:
-        # ... (Data processing logic remains the same) ...
         # Ensure input is a DataFrame
         if not isinstance(df, pd.DataFrame):
             st.error("Input data is not a valid DataFrame."); return None
@@ -32,15 +31,16 @@ def perform_baseline_calculations(df):
         if not required_cols.issubset(df.columns):
             st.error(f"Input data must contain columns: {required_cols}"); return None
         # Convert relevant columns to numeric, coercing errors
-        df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
-        df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce')
-        df.dropna(subset=['SERVICE_LEVEL', 'STOCK'], inplace=True) # Drop rows where essential numeric conversions failed
+        df_copy = df.copy() # Work on a copy
+        df_copy['SERVICE_LEVEL'] = pd.to_numeric(df_copy['SERVICE_LEVEL'], errors='coerce')
+        df_copy['STOCK'] = pd.to_numeric(df_copy['STOCK'], errors='coerce')
+        df_copy.dropna(subset=['SERVICE_LEVEL', 'STOCK'], inplace=True) # Drop rows where essential numeric conversions failed
         # Pivot baseline (BSL) for calculations
-        if 'BSL' not in df['POLICY'].unique(): st.error("Baseline policy 'BSL' not found."); return None
-        baseline_df = df[df['POLICY'] == 'BSL'].drop_duplicates(subset=['LT'])
+        if 'BSL' not in df_copy['POLICY'].unique(): st.error("Baseline policy 'BSL' not found."); return None
+        baseline_df = df_copy[df_copy['POLICY'] == 'BSL'].drop_duplicates(subset=['LT'])
         baseline_df = baseline_df[['LT', 'SERVICE_LEVEL', 'STOCK']].set_index('LT')
         # Merge baseline data with other policies
-        merged_df = df[df['POLICY'] != 'BSL'].merge(baseline_df, on='LT', suffixes=('', '_BSL'), how='left')
+        merged_df = df_copy[df_copy['POLICY'] != 'BSL'].merge(baseline_df, on='LT', suffixes=('', '_BSL'), how='left')
         # Handle cases where merge might fail or result in NAs
         if merged_df['SERVICE_LEVEL_BSL'].isnull().any() or merged_df['STOCK_BSL'].isnull().any():
             st.warning("Some non-BSL entries dropped due to missing baseline match/value.")
@@ -56,7 +56,8 @@ def perform_baseline_calculations(df):
 
         return merged_df
     except Exception as e:
-        st.error(f"Error during baseline calculations: {e}"); return None
+        st.error(f"Error during baseline calculations: {e}"); traceback.print_exc(); return None
+
 
 # --- Plotting Functions ---
 
@@ -87,69 +88,59 @@ def plot_relative_performance(merged_df, custom_title=None,
 
         # ++ Use fontsize parameters for Labels and Title ++
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Relative Performance: Stock vs Service Level Difference (%)'
-        ax.set_title(plot_title, fontsize=title_axis_fontsize + 2) # Make title slightly larger than axes
+        ax.set_title(plot_title, fontsize=title_axis_fontsize + 2, pad=20) # Added padding
         ax.set_xlabel('Inventory Difference (%) (Negative is Better)', fontsize=title_axis_fontsize)
         ax.set_ylabel('Service Level Difference (%) (Positive is Better)', fontsize=title_axis_fontsize)
-        # Update tick label sizes too (optional)
         ax.tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
 
-        # ++ Use fontsize parameters for Legends ++
-        handles, labels = scatter.get_legend_handles_labels()
         # --- Legend Modification START ---
-        # Remove original legend created by scatterplot
-        scatter.legend_.remove()
+        # Retrieve handles/labels BEFORE removing the default legend
+        handles, labels = scatter.get_legend_handles_labels()
+        if scatter.legend_: scatter.legend_.remove() # Remove default legend
 
         # Create SL Target Legend (Colors)
         lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
+        # Let matplotlib decide ncol for horizontal layout based on number of items
+        ncol1 = len(lt_patches)
         legend1 = ax.legend(handles=lt_patches, title='SL Target (%)',
-                            # Position: Centered below axes, slightly offset down
-                            bbox_to_anchor=(0.5, -0.15), # X=center, Y=below plot
-                            loc='upper center',         # Anchor point on legend box
-                            ncol=1,                     # Display vertically
+                            # Position: Left-ish below axes
+                            bbox_to_anchor=(0.4, -0.15), # X=left-center, Y=below plot
+                            loc='upper right',         # Anchor point on legend box (align right edge of legend to anchor)
+                            ncol=ncol1,                # Display HORIZONTALLY
                             fontsize=legend_fontsize, title_fontsize=legend_fontsize)
         ax.add_artist(legend1) # Add the first legend manually
 
         # Create Policy Legend (Markers)
         unique_policies = merged_df['POLICY'].unique(); policy_handles = []; policy_labels_for_legend = []
-        # Extract unique policy handles/labels (simplified finding might be needed if complex)
-        temp_handles, temp_labels = ax.get_legend_handles_labels() # Get handles created by scatterplot (before removal)
         seen_policies = set()
+        # Use handles/labels retrieved earlier
         for h, l in zip(handles, labels):
-            # Try to determine if the label corresponds to a Policy
-            # This heuristic checks if the label is one of the unique policies
             if l in unique_policies and l not in seen_policies:
                  policy_handles.append(h)
                  policy_labels_for_legend.append(l)
                  seen_policies.add(l)
-            # Add more sophisticated checks if labels are complex (tuples etc.)
 
         if policy_handles:
-            # Calculate offset for the second legend based on the first one's estimated height
-            # This is an approximation and might need tuning
-            # A simpler way is to just give it a fixed offset further down.
-            legend2_y_offset = -0.15 - (len(lt_patches) * 0.03 + 0.06) # Heuristic offset
-
+            # Let matplotlib decide ncol for horizontal layout based on number of items
+            ncol2 = len(policy_handles)
             ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy',
-                      # Position: Centered below axes, offset below the first legend
-                      # bbox_to_anchor=(0.5, legend2_y_offset), # Dynamic offset (can be complex)
-                      bbox_to_anchor=(0.5, -0.25), # Fixed offset below the first - adjust Y as needed
-                      loc='upper center',         # Anchor point on legend box
-                      ncol=1,                     # Display vertically
+                      # Position: Right-ish below axes
+                      bbox_to_anchor=(0.6, -0.15), # X=right-center, Y=below plot (SAME Y as legend1)
+                      loc='upper left',          # Anchor point on legend box (align left edge of legend to anchor)
+                      ncol=ncol2,                # Display HORIZONTALLY
                       fontsize=legend_fontsize, title_fontsize=legend_fontsize)
         # --- Legend Modification END ---
-
-        # Manual Axes Positioning (REMOVED - Let tight_layout handle it)
-        # ax.set_position([0.1, 0.1, 0.65, 0.8]) # Adjust width (0.65) if needed
 
         # Axis Limits & Grid...
         ax.set_xlim(xlim_min, xlim_max); ax.set_ylim(ylim_min, ylim_max)
         ax.grid(True, linestyle='--')
 
         # Adjust layout to prevent overlap, especially with legends at bottom
-        fig.subplots_adjust(bottom=0.3) # Increase bottom margin significantly
+        # Reducing bottom margin slightly as horizontal legends are less tall
+        fig.subplots_adjust(bottom=0.2)
 
         return fig
-    except Exception as e: st.error(f"Error generating relative plot: {e}"); traceback.print_exc(); return None # Added traceback
+    except Exception as e: st.error(f"Error generating relative plot: {e}"); traceback.print_exc(); return None
 
 # ++ Add fontsize parameters ++
 def plot_absolute_performance(input_df, custom_title=None,
@@ -158,8 +149,8 @@ def plot_absolute_performance(input_df, custom_title=None,
     """Generates the Absolute Performance plots with dynamic sizes."""
     if input_df is None or input_df.empty: st.warning("No raw data for absolute plot."); return None
     df = input_df.copy()
-    # Create figure with 2 subplots, maybe slightly taller to accommodate legends if needed
-    fig, axes = plt.subplots(1, 2, figsize=(figure_width, figure_height + 1)) # Increased height slightly
+    # Keep original figure height unless testing shows otherwise
+    fig, axes = plt.subplots(1, 2, figsize=(figure_width, figure_height))
     try:
         # Data processing...
         required_cols = {'POLICY', 'LT', 'SERVICE_LEVEL', 'STOCK'};
@@ -176,55 +167,42 @@ def plot_absolute_performance(input_df, custom_title=None,
         df['LT_Label'] = pd.Categorical(df['LT_Label'], categories=label_order, ordered=True)
 
         # Plotting...
-        # Plot 1: Stock
         line1 = sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY', marker='o', linewidth=2)
-        # ++ Apply fontsizes ++
         axes[0].set_xlabel('Service Level Target (%)', fontsize=title_axis_fontsize)
         axes[0].set_ylabel('Inventory (Units)', fontsize=title_axis_fontsize)
         axes[0].tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
-        axes[0].grid(True);
-        axes[0].set_ylim(bottom=0)
-        # Remove default legend
+        axes[0].grid(True); axes[0].set_ylim(bottom=0)
         if axes[0].get_legend(): axes[0].get_legend().remove()
 
-        # Plot 2: Service Level
         line2 = sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
-        # ++ Apply fontsizes ++
         axes[1].set_xlabel('Service Level Target (%)', fontsize=title_axis_fontsize)
         axes[1].set_ylabel('Service Level', fontsize=title_axis_fontsize)
         axes[1].tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
         axes[1].grid(True);
         min_sl = df['SERVICE_LEVEL'].min(); max_sl = df['SERVICE_LEVEL'].max()
         axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
-        # Remove default legend
         if axes[1].get_legend(): axes[1].get_legend().remove()
 
         # --- Common Legend START ---
-        # Get handles and labels from one of the plots (they should be the same)
-        handles, labels = line1.get_legend_handles_labels()
-
-        # Create a single legend for the whole figure, placed at the bottom
-        fig.legend(handles=handles, labels=labels, title='Policy',
-                   # Position: Centered below the subplots
-                   bbox_to_anchor=(0.5, 0.05), # X=center, Y=near bottom of FIGURE
-                   loc='upper center',         # Anchor point on legend box
-                   ncol=1,                     # Display vertically
-                   fontsize=legend_fontsize, title_fontsize=legend_fontsize)
+        handles, labels = line1.get_legend_handles_labels() # Get handles from one plot
+        if handles: # Proceed only if there are handles to show
+            # Let matplotlib decide ncol for horizontal layout
+            ncol_fig = len(handles)
+            fig.legend(handles=handles, labels=labels, title='Policy',
+                       bbox_to_anchor=(0.5, 0.05), # Centered, near bottom of FIGURE
+                       loc='upper center',         # Anchor point on legend box
+                       ncol=ncol_fig,              # Display HORIZONTALLY
+                       fontsize=legend_fontsize, title_fontsize=legend_fontsize)
         # --- Common Legend END ---
 
-
-        # Figure Title & Layout
-        # ++ Apply fontsize ++
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
-        fig.suptitle(plot_title, fontsize=title_axis_fontsize + 2, y=0.98) # Adjust title position slightly if needed
+        fig.suptitle(plot_title, fontsize=title_axis_fontsize + 2, y=0.98) # Adjust y if needed
 
-        # Adjust layout to prevent overlap and make space for the common legend
-        # rect=[left, bottom, right, top] - increase bottom margin
-        plt.tight_layout(rect=[0, 0.1, 1, 0.95]) # Adjust bottom (0.1) and top (0.95)
+        # Adjust layout - use bottom margin suitable for a horizontal legend
+        plt.tight_layout(rect=[0, 0.1, 1, 0.95]) # Keep bottom=0.1 or adjust as needed
 
         return fig
-    except Exception as e: st.error(f"Error generating absolute plots: {e}"); traceback.print_exc(); return None # Added traceback
-
+    except Exception as e: st.error(f"Error generating absolute plots: {e}"); traceback.print_exc(); return None
 
 # ++ Add fontsize parameters ++
 def plot_quadrant_analysis(merged_df, custom_title=None,
@@ -237,7 +215,6 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
     if service_floor_thresh < ylim_min: st.warning(f"Service floor ({service_floor_thresh}%) < Y-min ({ylim_min}%).")
     if stock_target_thresh < xlim_min: st.warning(f"Stock target ({stock_target_thresh}%) < X-min ({xlim_min}%).")
 
-    # ++ Use parameters for figsize ++
     fig, ax = plt.subplots(figsize=(figure_width, figure_height))
     try:
         plot_data_df = merged_df # Use all data points
@@ -258,10 +235,12 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
 
         # Overlay scatterplot...
         scatter = None # Initialize scatter
+        handles, labels = [], [] # Initialize handles/labels
         if not plot_data_df.empty:
              scatter = sns.scatterplot( ax=ax, data=plot_data_df, x='STOCK_DIFF%', y='SERVICE_DIFF%', hue='LT_Percent', hue_order=lt_labels_unique, style='POLICY', s=200, palette=lt_color_map, edgecolor='black' )
              # --- Legend Modification START (Quadrant) ---
              if scatter and hasattr(scatter, 'legend_') and scatter.legend_:
+                 handles, labels = scatter.get_legend_handles_labels() # Get handles/labels
                  scatter.legend_.remove() # Remove default combined legend
              # --- Legend Modification END (Quadrant) ---
         else: st.info("No data points to plot.")
@@ -270,72 +249,64 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
         # Axes, Title, Legend setup...
         ax.axhline(0, color='black', linewidth=0.8, linestyle='--'); ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
         ax.add_patch(mpatches.Rectangle((xlim_min, ylim_min), xlim_max - xlim_min, ylim_max - ylim_min, hatch='///', fill=False, edgecolor='gray', linewidth=0, alpha=0.05))
-        # ++ Use fontsize parameters ++
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Quadrant Analysis: Stock vs Service Level Difference (%)'
-        ax.set_title(plot_title, fontsize=title_axis_fontsize + 2) # Make title slightly larger
+        ax.set_title(plot_title, fontsize=title_axis_fontsize + 2, pad=20) # Added padding
         ax.set_xlabel('Inventory Difference (%)', fontsize=title_axis_fontsize)
         ax.set_ylabel('Service Level Difference (%)', fontsize=title_axis_fontsize)
-        ax.tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2) # Adjust tick labels too
+        ax.tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
 
         # ++ Use fontsize parameters for Legends ++
-        if scatter: # Only create legends if scatter plot was created
-             # --- Legend Modification START (Quadrant) ---
+        if scatter and handles: # Only create legends if scatter plot was created and we have handles
+            # --- Legend Modification START (Quadrant) ---
             # Create SL Target Legend (Colors)
             lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
+            # Let matplotlib decide ncol for horizontal layout
+            ncol1 = len(lt_patches)
             legend1 = ax.legend(handles=lt_patches, title='SL Target (%)',
-                                # Position: Centered below axes, slightly offset down
-                                bbox_to_anchor=(0.5, -0.15), # X=center, Y=below plot
-                                loc='upper center',         # Anchor point on legend box
-                                ncol=1,                     # Display vertically
+                                # Position: Left-ish below axes
+                                bbox_to_anchor=(0.4, -0.15), # X=left-center, Y=below plot
+                                loc='upper right',         # Anchor point on legend box
+                                ncol=ncol1,                # Display HORIZONTALLY
                                 fontsize=legend_fontsize, title_fontsize=legend_fontsize)
             ax.add_artist(legend1) # Add the first legend manually
 
             # Create Policy Legend (Markers)
             unique_policies = plot_data_df['POLICY'].unique()
-            policy_handles = []
-            policy_labels_for_legend = []
-            # Need to get handles/labels *after* plotting but *before* removing legend
-            # Re-create dummy handles based on unique styles/markers if needed, or retrieve from scatter
-            # Let's try getting from scatter *before* removal (this is tricky)
-            # A more robust way is to create Line2D objects for the markers manually
-            all_handles, all_labels = scatter.get_legend_handles_labels()
+            policy_handles = []; policy_labels_for_legend = []
             seen_policies = set()
-            for h, l in zip(all_handles, all_labels):
+            # Use handles/labels retrieved earlier
+            for h, l in zip(handles, labels):
                  if l in unique_policies and l not in seen_policies:
                       policy_handles.append(h)
                       policy_labels_for_legend.append(l)
                       seen_policies.add(l)
 
             if policy_handles:
-                # Calculate offset for the second legend
-                legend2_y_offset = -0.15 - (len(lt_patches) * 0.03 + 0.06) # Heuristic offset
-
+                # Let matplotlib decide ncol for horizontal layout
+                ncol2 = len(policy_handles)
                 ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy',
-                          # Position: Centered below axes, offset below the first legend
-                          # bbox_to_anchor=(0.5, legend2_y_offset), # Dynamic offset
-                          bbox_to_anchor=(0.5, -0.25), # Fixed offset below the first - adjust Y as needed
-                          loc='upper center',         # Anchor point on legend box
-                          ncol=1,                     # Display vertically
+                          # Position: Right-ish below axes
+                          bbox_to_anchor=(0.6, -0.15), # X=right-center, Y=below plot (SAME Y as legend1)
+                          loc='upper left',          # Anchor point on legend box
+                          ncol=ncol2,                # Display HORIZONTALLY
                           fontsize=legend_fontsize, title_fontsize=legend_fontsize)
             # --- Legend Modification END (Quadrant) ---
-
-        # Manual Axes Positioning (REMOVED - Let tight_layout handle it)
-        # ax.set_position([0.1, 0.1, 0.65, 0.8]) # Adjust width (0.65) if needed
 
         # Axis Limits & Grid...
         ax.set_xlim(xlim_min, xlim_max); ax.set_ylim(ylim_min, ylim_max)
         ax.grid(True, linestyle='--')
 
         # Adjust layout to prevent overlap, especially with legends at bottom
-        fig.subplots_adjust(bottom=0.3) # Increase bottom margin significantly
+        # Reducing bottom margin slightly as horizontal legends are less tall
+        fig.subplots_adjust(bottom=0.2)
 
         return fig
-    except Exception as e: st.error(f"Error generating quadrant plot: {e}"); traceback.print_exc(); return None # Added traceback
+    except Exception as e: st.error(f"Error generating quadrant plot: {e}"); traceback.print_exc(); return None
 
 
 # --- Streamlit App Layout ---
-# [ Rest of your Streamlit app code remains the same ]
-# ... (Keep the Streamlit UI code as it was) ...
+# [ Rest of your Streamlit app code remains the same - make sure figure height slider default is reasonable ]
+# ...
 
 st.title("Inventory Policy Analysis Dashboard")
 
@@ -354,16 +325,17 @@ if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
             text_data = pd.read_csv(string_io, sep='\t', header=0, engine='python', on_bad_lines='warn')
             if text_data is not None and not text_data.empty:
                 st.session_state['raw_df'] = text_data
-                st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'].copy()) # Pass copy
+                # Perform calculations right after loading
+                st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
                 st.sidebar.success(f"Loaded {len(text_data)} rows from text.")
             else:
                 st.sidebar.error("Could not parse text or data is empty.")
-                if 'raw_df' in st.session_state: del st.session_state['raw_df'];
-                if 'merged_df' in st.session_state: del st.session_state['merged_df'];
+                if 'raw_df' in st.session_state: del st.session_state['raw_df']
+                if 'merged_df' in st.session_state: del st.session_state['merged_df']
         except Exception as e:
             st.sidebar.error(f"Error parsing text area: {e}")
-            if 'raw_df' in st.session_state: del st.session_state['raw_df'];
-            if 'merged_df' in st.session_state: del st.session_state['merged_df'];
+            if 'raw_df' in st.session_state: del st.session_state['raw_df']
+            if 'merged_df' in st.session_state: del st.session_state['merged_df']
     else: st.sidebar.warning("Text area is empty.")
 st.sidebar.markdown("---")
 # Method 2: File Uploader
@@ -376,22 +348,22 @@ if uploaded_file is not None:
         elif uploaded_file.name.endswith(('.xlsx', '.xls')): file_data = pd.read_excel(uploaded_file, engine='openpyxl')
         if file_data is not None and not file_data.empty:
             st.session_state['raw_df'] = file_data
-            st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'].copy()) # Pass copy
+            # Perform calculations right after loading
+            st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
             st.sidebar.success(f"Loaded {len(file_data)} rows from: {uploaded_file.name}")
         elif file_data is not None:
             st.sidebar.warning(f"File '{uploaded_file.name}' is empty.")
-            if 'raw_df' in st.session_state: del st.session_state['raw_df'];
-            if 'merged_df' in st.session_state: del st.session_state['merged_df'];
+            if 'raw_df' in st.session_state: del st.session_state['raw_df']
+            if 'merged_df' in st.session_state: del st.session_state['merged_df']
         else: st.sidebar.error("Could not read the uploaded file format.")
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
-        if 'raw_df' in st.session_state: del st.session_state['raw_df'];
-        if 'merged_df' in st.session_state: del st.session_state['merged_df'];
+        if 'raw_df' in st.session_state: del st.session_state['raw_df']
+        if 'merged_df' in st.session_state: del st.session_state['merged_df']
 
 # --- Main Display Area ---
 if 'raw_df' in st.session_state:
     st.header("Loaded Data Preview")
-    # Ensure raw_df exists and is a DataFrame before displaying
     if isinstance(st.session_state.get('raw_df'), pd.DataFrame):
          st.dataframe(st.session_state['raw_df'].head(), height=200)
     else:
@@ -402,27 +374,22 @@ if 'raw_df' in st.session_state:
     st.markdown("---")
 
     # --- Plot Controls ---
-    # Row 1: Plot Choice and Title Input
     control_col1, control_col2 = st.columns([0.6, 0.4])
     with control_col1: plot_choice = st.selectbox("Choose Plot:", ["Relative Performance (vs Baseline)", "Absolute Performance", "Quadrant Analysis"], key="plot_select")
     with control_col2: custom_title_input = st.text_input("Custom graph title (optional):", placeholder="Uses default if empty", key="custom_title_input")
     user_title = custom_title_input.strip() if custom_title_input else None
 
-    # Row 2: Figure Size Controls
     st.subheader("Figure Size (inches)")
     size_col1, size_col2 = st.columns(2)
     with size_col1: fig_width = st.slider("Width:", min_value=6.0, max_value=20.0, value=12.0, step=0.5, key="fig_width_slider", format="%.1f")
-    # Adjusted default height to better accommodate bottom legends
-    with size_col2: fig_height = st.slider("Height:", min_value=5.0, max_value=15.0, value=8.0, step=0.5, key="fig_height_slider", format="%.1f")
+    # Reset default height, adjust if needed based on testing
+    with size_col2: fig_height = st.slider("Height:", min_value=4.0, max_value=15.0, value=7.0, step=0.5, key="fig_height_slider", format="%.1f")
 
-    # ++ Row 3: Font Size Controls ++
     st.subheader("Font Sizes")
     font_col1, font_col2 = st.columns(2)
     with font_col1: title_axis_font_size = st.slider("Title & Axis Label Size:", min_value=6, max_value=20, value=12, step=1, key="title_axis_font_slider")
     with font_col2: legend_font_size = st.slider("Legend Size:", min_value=5, max_value=18, value=9, step=1, key="legend_font_slider")
-    # ++ End Font Size Controls ++
 
-    # --- Axis Limit Controls (Conditional) ---
     show_diff_plot_controls = plot_choice in ["Relative Performance (vs Baseline)", "Quadrant Analysis"]
     limits_valid = True
     x_min_limit, x_max_limit = -14, 5; y_min_limit, y_max_limit = -14, 5 # Defaults
@@ -434,7 +401,6 @@ if 'raw_df' in st.session_state:
         with limit_col2: x_max_limit = st.slider("X-Axis Max (%)", -50, 50, 5, 1, key="x_max_slider"); y_max_limit = st.slider("Y-Axis Max (%)", -50, 50, 5, 1, key="y_max_slider")
         if x_min_limit >= x_max_limit or y_min_limit >= y_max_limit: st.error("Axis Min limit must be strictly less than Max limit."); limits_valid = False
 
-    # --- Desirability Controls (Conditional for Quadrant Plot) ---
     stock_target_thresh_param = -6.0; service_target_thresh_param = 0.0; service_floor_thresh_param = -10.0 # Defaults
     if plot_choice == "Quadrant Analysis":
         st.subheader("Desirability Logic Parameters")
@@ -449,9 +415,11 @@ if 'raw_df' in st.session_state:
     # --- Display Chosen Plot ---
     fig_to_show = None; plot_error = False
     try:
-        # ++ Pass Font Size parameters to ALL plot functions ++
+        # Check if merged_df needs recalculation (e.g., if raw_df was reloaded but calculation failed)
+        if plot_choice != "Absolute Performance" and 'merged_df' not in st.session_state and 'raw_df' in st.session_state:
+             st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
+
         if plot_choice == "Relative Performance (vs Baseline)":
-            # Ensure merged_df exists and is DataFrame
             merged_df_state = st.session_state.get('merged_df')
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
                 if limits_valid:
@@ -459,28 +427,26 @@ if 'raw_df' in st.session_state:
                     fig_to_show = plot_relative_performance(merged_df_state, custom_title=user_title,
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size) # Pass fonts
+                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_fontsize)
                 else: plot_error = True
-            elif merged_df_state is None:
-                st.warning("Data not yet processed for relative plot. Load data first.")
-            else: # It exists but might be empty after processing
-                 st.warning("No data available for relative plot after processing.")
+            elif merged_df_state is None and 'raw_df' in st.session_state:
+                st.warning("Data processing required for relative plot failed. Check baseline ('BSL') data.")
+            else:
+                 st.warning("Load data or ensure baseline ('BSL') policy exists for relative plot.")
 
 
         elif plot_choice == "Absolute Performance":
-             # Ensure raw_df exists and is DataFrame
             raw_df_state = st.session_state.get('raw_df')
             if isinstance(raw_df_state, pd.DataFrame) and not raw_df_state.empty:
                 st.subheader("Absolute Performance")
                 fig_to_show = plot_absolute_performance(raw_df_state, custom_title=user_title,
                                 figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size) # Pass fonts
+                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
             else:
-                 st.warning("Raw data not loaded or is empty.")
+                 st.warning("Load data for absolute plot.")
 
 
         elif plot_choice == "Quadrant Analysis":
-            # Ensure merged_df exists and is DataFrame
             merged_df_state = st.session_state.get('merged_df')
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
                 if limits_valid:
@@ -489,12 +455,12 @@ if 'raw_df' in st.session_state:
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param,
                                 figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size) # Pass fonts
+                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
                 else: plot_error = True
-            elif merged_df_state is None:
-                 st.warning("Data not yet processed for quadrant plot. Load data first.")
-            else: # It exists but might be empty after processing
-                 st.warning("No data available for quadrant plot after processing.")
+            elif merged_df_state is None and 'raw_df' in st.session_state:
+                 st.warning("Data processing required for quadrant plot failed. Check baseline ('BSL') data.")
+            else:
+                 st.warning("Load data or ensure baseline ('BSL') policy exists for quadrant plot.")
 
 
         # Display the figure
@@ -503,7 +469,7 @@ if 'raw_df' in st.session_state:
 
     except Exception as display_e:
          st.error(f"An unexpected error occurred trying to display plot: {display_e}")
-         st.exception(display_e) # Show full traceback in Streamlit
+         st.exception(display_e)
 
 
 # Initial State Message
