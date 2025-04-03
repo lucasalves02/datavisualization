@@ -164,7 +164,7 @@ def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_m
 
         ax.grid(True, linestyle='--')
         # plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout for external legends
-        ax.set_position([0.1, 0.1, 0.7, 0.8])
+        ax.set_position([0.1, 0.1, 0.65, 0.8])
         return fig
 
     except Exception as e:
@@ -360,7 +360,7 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
         ax.set_ylim(ylim_min, ylim_max)
         ax.grid(True, linestyle='--')
         # plt.tight_layout(rect=[0, 0, 0.85, 1])
-        ax.set_position([0.1, 0.1, 0.7, 0.8])
+        ax.set_position([0.1, 0.1, 0.65, 0.8])
 
         return fig
 
