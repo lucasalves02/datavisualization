@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Apr  3 14:30:00 2025
+Created on Wed Apr  3 15:00:00 2025
 Streamlit Inventory Policy Analysis Dashboard
 @author: lucas
 """
@@ -61,11 +61,11 @@ def perform_baseline_calculations(df):
 
 # --- Plotting Functions ---
 
-# ++ Add fontsize parameters ++
+# Using the LATEST plot_relative_performance (dynamic size/font, bottom legends)
 def plot_relative_performance(merged_df, custom_title=None,
                               xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5,
                               figure_width=12.0, figure_height=7.0,
-                              title_axis_fontsize=12, legend_fontsize=9): # New fontsize params
+                              title_axis_fontsize=12, legend_fontsize=9):
     """Generates the Relative Performance plot with dynamic sizes."""
     if merged_df is None or merged_df.empty: st.warning("No processed data for relative plot."); return None
 
@@ -101,10 +101,7 @@ def plot_relative_performance(merged_df, custom_title=None,
         lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
         ncol1 = len(lt_patches)
         legend1 = ax.legend(handles=lt_patches, title='SL Target (%)',
-                            # Position: Shifted slightly inward
-                            bbox_to_anchor=(0.48, -0.15), # <--- Adjusted X (slightly more towards center)
-                            loc='upper right',
-                            ncol=ncol1,
+                            bbox_to_anchor=(0.48, -0.15), loc='upper right', ncol=ncol1,
                             fontsize=legend_fontsize, title_fontsize=legend_fontsize)
         ax.add_artist(legend1)
 
@@ -120,10 +117,7 @@ def plot_relative_performance(merged_df, custom_title=None,
         if policy_handles:
             ncol2 = len(policy_handles)
             ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy',
-                      # Position: Shifted slightly inward
-                      bbox_to_anchor=(0.52, -0.15), # <--- Adjusted X (slightly more towards center)
-                      loc='upper left',
-                      ncol=ncol2,
+                      bbox_to_anchor=(0.52, -0.15), loc='upper left', ncol=ncol2,
                       fontsize=legend_fontsize, title_fontsize=legend_fontsize)
         # --- Legend Modification END ---
 
@@ -132,80 +126,95 @@ def plot_relative_performance(merged_df, custom_title=None,
         ax.grid(True, linestyle='--')
 
         # Adjust layout using tight_layout with rect
-        # rect = [left, bottom, right, top]
-        fig.tight_layout(rect=[0.03, 0.15, 0.97, 0.95]) # Increased bottom margin, slightly inset left/right
+        fig.tight_layout(rect=[0.03, 0.15, 0.97, 0.95])
 
         return fig
     except Exception as e: st.error(f"Error generating relative plot: {e}"); traceback.print_exc(); return None
 
-# [ plot_absolute_performance remains the same as the previous version ]
-def plot_absolute_performance(input_df, custom_title=None,
-                              figure_width=12.0, figure_height=7.0,
-                              title_axis_fontsize=12, legend_fontsize=9): # New fontsize params
-    """Generates the Absolute Performance plots with dynamic sizes."""
-    if input_df is None or input_df.empty: st.warning("No raw data for absolute plot."); return None
+
+# ==============================================================
+# START: Using the PREVIOUS plot_absolute_performance function
+# ==============================================================
+def plot_absolute_performance(input_df, custom_title=None):
+    """
+    Generates the Absolute Performance plots (Inventory & Service Level).
+    (PREVIOUS VERSION - Uses fixed sizes, internal legends)
+    """
+    if input_df is None or input_df.empty:
+        st.warning("Cannot generate absolute performance plots: No raw data available.")
+        return None
+
     df = input_df.copy()
-    # Keep original figure height unless testing shows otherwise
-    fig, axes = plt.subplots(1, 2, figsize=(figure_width, figure_height))
+    # --- Uses Fixed Figure Size ---
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
     try:
-        # Data processing...
-        required_cols = {'POLICY', 'LT', 'SERVICE_LEVEL', 'STOCK'};
-        if not required_cols.issubset(df.columns): st.error(f"Absolute plot requires columns: {required_cols}"); return None
-        df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce'); df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
-        df['LT'] = df['LT'].astype(str); df.dropna(subset=['POLICY', 'LT', 'STOCK', 'SERVICE_LEVEL'], inplace=True)
-        if df.empty: st.warning("No valid data for absolute plots after cleaning."); return None
-        lt_full_order = ['LT1', 'LT2', 'LT3', 'LT4', 'LT5']; lt_mapping = {'LT1': '88%', 'LT2': '90%', 'LT3': '92%', 'LT4': '94%', 'LT5': '96%'}
+        # Essential columns check
+        required_cols = {'POLICY', 'LT', 'SERVICE_LEVEL', 'STOCK'}
+        if not required_cols.issubset(df.columns):
+            st.error(f"Absolute plot requires columns: {required_cols}")
+            return None
+
+        # Ensure correct data types
+        df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce')
+        df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
+        df['LT'] = df['LT'].astype(str) # Ensure LT is string before category handling
+        df.dropna(subset=['POLICY', 'LT', 'STOCK', 'SERVICE_LEVEL'], inplace=True)
+
+        if df.empty:
+            st.warning("No valid data remaining after cleaning for absolute plots.")
+            return None
+
+        # Category Handling for LT axis
+        lt_full_order = ['LT1', 'LT2', 'LT3', 'LT4', 'LT5']
+        lt_mapping = {'LT1': '88%', 'LT2': '90%', 'LT3': '92%', 'LT4': '94%', 'LT5': '96%'}
         existing_lts_in_order = [lt for lt in lt_full_order if lt in df['LT'].unique()]
         lt_categories = existing_lts_in_order if existing_lts_in_order else sorted(df['LT'].unique())
-        df['LT'] = pd.Categorical(df['LT'], categories=lt_categories, ordered=True); df = df.sort_values('LT')
+
+        df['LT'] = pd.Categorical(df['LT'], categories=lt_categories, ordered=True)
+        df = df.sort_values('LT')
         df['LT_Label'] = df['LT'].map(lt_mapping).fillna(df['LT'].astype(str))
         label_order = [lt_mapping.get(cat, str(cat)) for cat in lt_categories]
         df['LT_Label'] = pd.Categorical(df['LT_Label'], categories=label_order, ordered=True)
 
-        # Plotting...
-        line1 = sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY', marker='o', linewidth=2)
-        axes[0].set_xlabel('Service Level Target (%)', fontsize=title_axis_fontsize)
-        axes[0].set_ylabel('Inventory (Units)', fontsize=title_axis_fontsize)
-        axes[0].tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
-        axes[0].grid(True); axes[0].set_ylim(bottom=0)
-        if axes[0].get_legend(): axes[0].get_legend().remove()
+        # Plotting
+        sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY', marker='o', linewidth=2)
+        axes[0].set_xlabel('Service Level Target (%)') # Font size is default
+        axes[0].set_ylabel('Inventory (Units)')     # Font size is default
+        axes[0].grid(True)
+        axes[0].legend(title='Policy') # Internal legend, default font size
+        axes[0].set_ylim(bottom=0)
 
-        line2 = sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
-        axes[1].set_xlabel('Service Level Target (%)', fontsize=title_axis_fontsize)
-        axes[1].set_ylabel('Service Level', fontsize=title_axis_fontsize)
-        axes[1].tick_params(axis='both', which='major', labelsize=title_axis_fontsize - 2)
-        axes[1].grid(True);
-        min_sl = df['SERVICE_LEVEL'].min(); max_sl = df['SERVICE_LEVEL'].max()
+        sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
+        axes[1].set_xlabel('Service Level Target (%)') # Font size is default
+        axes[1].set_ylabel('Service Level')          # Font size is default
+        axes[1].grid(True)
+        axes[1].legend(title='Policy') # Internal legend, default font size
+        min_sl = df['SERVICE_LEVEL'].min()
+        max_sl = df['SERVICE_LEVEL'].max()
         axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
-        if axes[1].get_legend(): axes[1].get_legend().remove()
 
-        # --- Common Legend START ---
-        handles, labels = line1.get_legend_handles_labels() # Get handles from one plot
-        if handles: # Proceed only if there are handles to show
-            # Let matplotlib decide ncol for horizontal layout
-            ncol_fig = len(handles)
-            fig.legend(handles=handles, labels=labels, title='Policy',
-                       bbox_to_anchor=(0.5, 0.05), # Centered, near bottom of FIGURE
-                       loc='upper center',         # Anchor point on legend box
-                       ncol=ncol_fig,              # Display HORIZONTALLY
-                       fontsize=legend_fontsize, title_fontsize=legend_fontsize)
-        # --- Common Legend END ---
-
+        # Add Figure Title (Fixed font size)
         plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
-        fig.suptitle(plot_title, fontsize=title_axis_fontsize + 2, y=0.98) # Adjust y if needed
-
-        # Adjust layout - use bottom margin suitable for a horizontal legend
-        plt.tight_layout(rect=[0, 0.1, 1, 0.95]) # Keep bottom=0.1 or adjust as needed
+        fig.suptitle(plot_title, fontsize=16, y=1.02) # Fixed font size
+        plt.tight_layout(rect=[0, 0.03, 1, 0.98])
 
         return fig
-    except Exception as e: st.error(f"Error generating absolute plots: {e}"); traceback.print_exc(); return None
 
-# ++ Add fontsize parameters ++
+    except Exception as e:
+        st.error(f"Error generating absolute performance plots: {e}")
+        traceback.print_exc(); return None # Print traceback for debugging
+# ==============================================================
+# END: Using the PREVIOUS plot_absolute_performance function
+# ==============================================================
+
+
+# Using the LATEST plot_quadrant_analysis (dynamic size/font, bottom legends)
 def plot_quadrant_analysis(merged_df, custom_title=None,
                            xlim_min=-14, xlim_max=5, ylim_min=-14, ylim_max=5,
                            stock_target_thresh=-6.0, service_target_thresh=0.0, service_floor_thresh=-10.0,
                            figure_width=12.0, figure_height=7.0,
-                           title_axis_fontsize=12, legend_fontsize=9): # New fontsize params
+                           title_axis_fontsize=12, legend_fontsize=9):
     """Generates the Quadrant Analysis plot with dynamic sizes and desirability logic."""
     if merged_df is None or merged_df.empty: st.warning("No processed data for quadrant plot."); return None
     if service_floor_thresh < ylim_min: st.warning(f"Service floor ({service_floor_thresh}%) < Y-min ({ylim_min}%).")
@@ -250,15 +259,11 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
 
         # ++ Legend setup ++
         if scatter and handles:
-            # --- Legend Modification START (Quadrant) ---
             # Create SL Target Legend (Colors)
             lt_patches = [mpatches.Patch(color=lt_color_map[lt], label=lt) for lt in lt_labels_unique if lt in lt_color_map]
             ncol1 = len(lt_patches)
             legend1 = ax.legend(handles=lt_patches, title='SL Target (%)',
-                                # Position: Shifted slightly inward
-                                bbox_to_anchor=(0.48, -0.15), # <--- Adjusted X
-                                loc='upper right',
-                                ncol=ncol1,
+                                bbox_to_anchor=(0.48, -0.15), loc='upper right', ncol=ncol1,
                                 fontsize=legend_fontsize, title_fontsize=legend_fontsize)
             ax.add_artist(legend1)
 
@@ -275,27 +280,22 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
             if policy_handles:
                 ncol2 = len(policy_handles)
                 ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy',
-                          # Position: Shifted slightly inward
-                          bbox_to_anchor=(0.52, -0.15), # <--- Adjusted X
-                          loc='upper left',
-                          ncol=ncol2,
+                          bbox_to_anchor=(0.52, -0.15), loc='upper left', ncol=ncol2,
                           fontsize=legend_fontsize, title_fontsize=legend_fontsize)
-            # --- Legend Modification END (Quadrant) ---
 
         # Axis Limits & Grid...
         ax.set_xlim(xlim_min, xlim_max); ax.set_ylim(ylim_min, ylim_max)
         ax.grid(True, linestyle='--')
 
         # Adjust layout using tight_layout with rect
-        fig.tight_layout(rect=[0.03, 0.15, 0.97, 0.95]) # Increased bottom margin, slightly inset left/right
+        fig.tight_layout(rect=[0.03, 0.15, 0.97, 0.95])
 
         return fig
     except Exception as e: st.error(f"Error generating quadrant plot: {e}"); traceback.print_exc(); return None
 
 
 # --- Streamlit App Layout ---
-# [ Rest of your Streamlit app code remains the same ]
-# ... (Ensure slider defaults and other UI elements are as intended) ...
+# [ Data Loading remains the same ]
 st.title("Inventory Policy Analysis Dashboard")
 
 # --- Sidebar for Data Input ---
@@ -402,7 +402,7 @@ if 'raw_df' in st.session_state:
     # --- Display Chosen Plot ---
     fig_to_show = None; plot_error = False
     try:
-        # Check if merged_df needs recalculation (e.g., if raw_df was reloaded but calculation failed)
+        # Check if merged_df needs recalculation
         if plot_choice != "Absolute Performance" and ('merged_df' not in st.session_state or st.session_state.merged_df is None) and 'raw_df' in st.session_state:
              st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
 
@@ -411,15 +411,16 @@ if 'raw_df' in st.session_state:
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
                 if limits_valid:
                     st.subheader("Relative Performance")
+                    # Call LATEST relative function
                     fig_to_show = plot_relative_performance(merged_df_state, custom_title=user_title,
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 figure_width=fig_width, figure_height=fig_height,
                                 title_axis_fontsize=title_axis_font_size,
                                 legend_fontsize=legend_font_size)
                 else: plot_error = True
-            elif 'raw_df' in st.session_state : # raw_df exists but merged_df is missing/invalid
+            elif 'raw_df' in st.session_state :
                 st.warning("Data processing required for relative plot failed. Check baseline ('BSL') data.")
-            else: # No data loaded at all
+            else:
                  st.warning("Load data first for relative plot.")
 
 
@@ -427,10 +428,14 @@ if 'raw_df' in st.session_state:
             raw_df_state = st.session_state.get('raw_df')
             if isinstance(raw_df_state, pd.DataFrame) and not raw_df_state.empty:
                 st.subheader("Absolute Performance")
-                fig_to_show = plot_absolute_performance(raw_df_state, custom_title=user_title,
-                                figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size,
-                                legend_fontsize=legend_font_size)
+                # --- MODIFIED CALL for previous function ---
+                st.info("Note: Figure size and font size sliders do not affect this specific plot version.")
+                fig_to_show = plot_absolute_performance(
+                                raw_df_state,               # Pass the dataframe
+                                custom_title=user_title     # Pass the custom title
+                                # Do NOT pass width, height, or font sizes
+                                )
+                # --- End MODIFIED CALL ---
             else:
                  st.warning("Load data for absolute plot.")
 
@@ -440,6 +445,7 @@ if 'raw_df' in st.session_state:
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
                 if limits_valid:
                     st.subheader("Quadrant Analysis")
+                    # Call LATEST quadrant function
                     fig_to_show = plot_quadrant_analysis(merged_df_state, custom_title=user_title,
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param,
@@ -447,9 +453,9 @@ if 'raw_df' in st.session_state:
                                 title_axis_fontsize=title_axis_font_size,
                                 legend_fontsize=legend_font_size)
                 else: plot_error = True
-            elif 'raw_df' in st.session_state: # raw_df exists but merged_df is missing/invalid
+            elif 'raw_df' in st.session_state:
                  st.warning("Data processing required for quadrant plot failed. Check baseline ('BSL') data.")
-            else: # No data loaded at all
+            else:
                  st.warning("Load data first for quadrant plot.")
 
 
