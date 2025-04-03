@@ -412,13 +412,14 @@ if 'raw_df' in st.session_state:
         st.markdown("---")
 
 
-    # --- Display Chosen Plot ---
+ # --- Display Chosen Plot ---
     fig_to_show = None; plot_error = False
     try:
         # Check if merged_df needs recalculation (e.g., if raw_df was reloaded but calculation failed)
         if plot_choice != "Absolute Performance" and 'merged_df' not in st.session_state and 'raw_df' in st.session_state:
              st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
 
+        # ++ Pass Font Size parameters to ALL plot functions ++
         if plot_choice == "Relative Performance (vs Baseline)":
             merged_df_state = st.session_state.get('merged_df')
             if isinstance(merged_df_state, pd.DataFrame) and not merged_df_state.empty:
@@ -427,7 +428,8 @@ if 'raw_df' in st.session_state:
                     fig_to_show = plot_relative_performance(merged_df_state, custom_title=user_title,
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_fontsize)
+                                title_axis_fontsize=title_axis_font_size,
+                                legend_fontsize=legend_font_size) # CORRECTED VARIABLE NAME
                 else: plot_error = True
             elif merged_df_state is None and 'raw_df' in st.session_state:
                 st.warning("Data processing required for relative plot failed. Check baseline ('BSL') data.")
@@ -441,7 +443,8 @@ if 'raw_df' in st.session_state:
                 st.subheader("Absolute Performance")
                 fig_to_show = plot_absolute_performance(raw_df_state, custom_title=user_title,
                                 figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
+                                title_axis_fontsize=title_axis_font_size,
+                                legend_fontsize=legend_font_size) # CORRECTED VARIABLE NAME
             else:
                  st.warning("Load data for absolute plot.")
 
@@ -455,7 +458,8 @@ if 'raw_df' in st.session_state:
                                 xlim_min=x_min_limit, xlim_max=x_max_limit, ylim_min=y_min_limit, ylim_max=y_max_limit,
                                 stock_target_thresh=stock_target_thresh_param, service_target_thresh=service_target_thresh_param, service_floor_thresh=service_floor_thresh_param,
                                 figure_width=fig_width, figure_height=fig_height,
-                                title_axis_fontsize=title_axis_font_size, legend_fontsize=legend_font_size)
+                                title_axis_fontsize=title_axis_font_size,
+                                legend_fontsize=legend_font_size) # CORRECTED VARIABLE NAME
                 else: plot_error = True
             elif merged_df_state is None and 'raw_df' in st.session_state:
                  st.warning("Data processing required for quadrant plot failed. Check baseline ('BSL') data.")
@@ -469,7 +473,7 @@ if 'raw_df' in st.session_state:
 
     except Exception as display_e:
          st.error(f"An unexpected error occurred trying to display plot: {display_e}")
-         st.exception(display_e)
+         st.exception(display_e) # Show full traceback in Streamlit
 
 
 # Initial State Message
