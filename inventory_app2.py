@@ -150,11 +150,11 @@ def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_m
              except Exception: pass # Catch potential errors during label processing
 
         # Add custom legends outside the plot
-        legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.05, 1), loc='upper left')
+        legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.03, 1), loc='upper left')
         ax.add_artist(legend1)
         # Only add policy legend if handles were found
         if policy_handles:
-             ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
+             ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.03, 0.55), loc='upper left')
         else: pass # Or ax.get_legend().remove() if only one legend is desired
 
         # --- Set Axis Limits using Slider Values ---
@@ -348,10 +348,10 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
                                      handle_found = True
                                      break
                  except Exception: pass
-             legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.05, 1), loc='upper left')
+             legend1 = ax.legend(handles=lt_patches, title='SL Target (%)', bbox_to_anchor=(1.03, 1), loc='upper left')
              ax.add_artist(legend1)
              if policy_handles:
-                  ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.05, 0.55), loc='upper left')
+                  ax.legend(handles=policy_handles, labels=policy_labels_for_legend, title='Policy', bbox_to_anchor=(1.03, 0.55), loc='upper left')
              else: pass
         # --- End Legends ---
 
