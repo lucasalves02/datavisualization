@@ -133,19 +133,20 @@ def plot_relative_performance(merged_df, custom_title=None,
 
 
 # ==============================================================
-# START: Using the PREVIOUS plot_absolute_performance function
+# Using the PREVIOUS plot_absolute_performance function (MODIFIED AGAIN)
 # ==============================================================
-def plot_absolute_performance(input_df, custom_title=None):
+# --- MODIFIED Signature: Removed custom_title ---
+def plot_absolute_performance(input_df):
     """
     Generates the Absolute Performance plots (Inventory & Service Level).
-    (PREVIOUS VERSION - Uses fixed sizes, internal legends)
+    (PREVIOUS VERSION - Uses fixed sizes, internal legends, DYNAMIC stock Y-axis, HARDCODED subplot titles)
     """
     if input_df is None or input_df.empty:
         st.warning("Cannot generate absolute performance plots: No raw data available.")
         return None
 
     df = input_df.copy()
-    # --- Uses Fixed Figure Size ---
+    # Uses Fixed Figure Size
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
     try:
@@ -158,7 +159,7 @@ def plot_absolute_performance(input_df, custom_title=None):
         # Ensure correct data types
         df['STOCK'] = pd.to_numeric(df['STOCK'], errors='coerce')
         df['SERVICE_LEVEL'] = pd.to_numeric(df['SERVICE_LEVEL'], errors='coerce')
-        df['LT'] = df['LT'].astype(str) # Ensure LT is string before category handling
+        df['LT'] = df['LT'].astype(str)
         df.dropna(subset=['POLICY', 'LT', 'STOCK', 'SERVICE_LEVEL'], inplace=True)
 
         if df.empty:
@@ -170,44 +171,50 @@ def plot_absolute_performance(input_df, custom_title=None):
         lt_mapping = {'LT1': '88%', 'LT2': '90%', 'LT3': '92%', 'LT4': '94%', 'LT5': '96%'}
         existing_lts_in_order = [lt for lt in lt_full_order if lt in df['LT'].unique()]
         lt_categories = existing_lts_in_order if existing_lts_in_order else sorted(df['LT'].unique())
-
         df['LT'] = pd.Categorical(df['LT'], categories=lt_categories, ordered=True)
         df = df.sort_values('LT')
         df['LT_Label'] = df['LT'].map(lt_mapping).fillna(df['LT'].astype(str))
         label_order = [lt_mapping.get(cat, str(cat)) for cat in lt_categories]
         df['LT_Label'] = pd.Categorical(df['LT_Label'], categories=label_order, ordered=True)
 
-        # Plotting
+        # --- Plotting ---
+        # Stock Plot (Left: axes[0])
         sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY', marker='o', linewidth=2)
-        axes[0].set_xlabel('Service Level Target (%)') # Font size is default
-        axes[0].set_ylabel('Inventory (Units)')     # Font size is default
+        # --- ADDED Subplot Title ---
+        axes[0].set_title('Absolute Inventory Levels by Policy', fontsize=14)
+        axes[0].set_xlabel('Service Level Target (%)')
+        axes[0].set_ylabel('Inventory (Units)')
         axes[0].grid(True)
-        axes[0].legend(title='Policy') # Internal legend, default font size
-    # axes[0].set_ylim(bottom=0)
+        axes[0].legend(title='Policy')
+        # Y-axis remains dynamic (no set_ylim(bottom=0))
 
+        # Service Level Plot (Right: axes[1])
         sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
-        axes[1].set_xlabel('Service Level Target (%)') # Font size is default
-        axes[1].set_ylabel('Service Level')          # Font size is default
+        # --- ADDED Subplot Title ---
+        axes[1].set_title('Absolute Service Levels by Policy', fontsize=14)
+        axes[1].set_xlabel('Service Level Target (%)')
+        axes[1].set_ylabel('Service Level')
         axes[1].grid(True)
-        axes[1].legend(title='Policy') # Internal legend, default font size
+        axes[1].legend(title='Policy')
         min_sl = df['SERVICE_LEVEL'].min()
         max_sl = df['SERVICE_LEVEL'].max()
-    # axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
+        # axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
 
-        # Add Figure Title (Fixed font size)
-        plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
-        fig.suptitle(plot_title, fontsize=16, y=1.02) # Fixed font size
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98])
+        # --- REMOVED Figure Title ---
+        # plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
+        # fig.suptitle(plot_title, fontsize=16, y=1.02) # REMOVED
+
+        # Use tight_layout - might need less top margin now
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjusted top margin slightly
 
         return fig
 
     except Exception as e:
         st.error(f"Error generating absolute performance plots: {e}")
-        traceback.print_exc(); return None # Print traceback for debugging
+        traceback.print_exc(); return None
 # ==============================================================
-# END: Using the PREVIOUS plot_absolute_performance function
+# End of modified plot_absolute_performance
 # ==============================================================
-
 
 # Using the LATEST plot_quadrant_analysis (dynamic size/font, bottom legends)
 def plot_quadrant_analysis(merged_df, custom_title=None,
