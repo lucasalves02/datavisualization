@@ -412,7 +412,7 @@ if st.sidebar.button("Load Data from Text Area", key="load_text_button"):
                 st.session_state['merged_df'] = perform_baseline_calculations(st.session_state['raw_df'])
                 st.sidebar.success(f"Successfully loaded {len(text_data)} rows from text area.")
                 # Clear the text area after successful load (optional)
-                st.session_state.pasted_text_area = ""
+                # st.session_state.pasted_text_area = "" -- Removed because of streamlit error
             else:
                  st.sidebar.error("Could not parse data from text area.")
                  # Clear potentially outdated data if load fails
