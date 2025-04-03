@@ -86,7 +86,7 @@ def plot_relative_performance(merged_df, custom_title=None, xlim_min=-14, xlim_m
         st.warning("Cannot generate relative performance plot: No processed data available.")
         return None
 
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(12, 7))
 
     try:
         # Define distinct colors for SL Targets
@@ -257,7 +257,7 @@ def plot_quadrant_analysis(merged_df, custom_title=None,
     if stock_target_thresh < xlim_min:
          st.warning(f"Stock target threshold ({stock_target_thresh}%) is below X-axis minimum ({xlim_min}%). Heatmap scaling might be affected.")
 
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(12, 7))
 
     try:
         plot_data_df = merged_df # Use all processed data points for scatter
