@@ -132,13 +132,12 @@ def plot_relative_performance(merged_df, custom_title=None,
     except Exception as e: st.error(f"Error generating relative plot: {e}"); traceback.print_exc(); return None
 
 
-# ==============================================================
-# Using the PREVIOUS plot_absolute_performance function (MODIFIED AGAIN)
-# ==============================================================
-# --- MODIFIED Signature: Removed custom_title ---
+# --- MODIFIED plot_absolute_performance Function ---
+# Uses 'Accent' palette for POLICY hue
 def plot_absolute_performance(input_df):
     """
-    Generates the Absolute Performance plots (Inventory & Service Level).
+    Generates the Absolute Performance plots (Inventory & Service Level)
+    using the 'Accent' color palette for Policies.
     (PREVIOUS VERSION - Uses fixed sizes, internal legends, DYNAMIC stock Y-axis, HARDCODED subplot titles)
     """
     if input_df is None or input_df.empty:
@@ -177,44 +176,54 @@ def plot_absolute_performance(input_df):
         label_order = [lt_mapping.get(cat, str(cat)) for cat in lt_categories]
         df['LT_Label'] = pd.Categorical(df['LT_Label'], categories=label_order, ordered=True)
 
+        # --- Determine the number of policies and choose the 'Accent' palette ---
+        unique_policies = sorted(df['POLICY'].unique()) # Sort for consistent order
+        n_policies = len(unique_policies)
+        # --- Using 'Accent' palette here for Policies ---
+        policy_palette_name = 'Accent'
+        policy_palette = sns.color_palette(policy_palette_name, n_colors=n_policies)
+        # --- End Palette Setup ---
+
         # --- Plotting ---
         # Stock Plot (Left: axes[0])
-        sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY', marker='o', linewidth=2)
-        # --- ADDED Subplot Title ---
+        # --- MODIFIED: Added palette and hue_order ---
+        sns.lineplot(ax=axes[0], data=df, x='LT_Label', y='STOCK', hue='POLICY',
+                     hue_order=unique_policies, # Ensure consistent color mapping
+                     palette=policy_palette,    # Use the 'Accent' palette
+                     marker='o', linewidth=2)
         axes[0].set_title('Absolute Inventory Levels by Policy', fontsize=14)
         axes[0].set_xlabel('Service Level Target (%)')
         axes[0].set_ylabel('Inventory (Units)')
         axes[0].grid(True)
         axes[0].legend(title='Policy')
-        # Y-axis remains dynamic (no set_ylim(bottom=0))
 
         # Service Level Plot (Right: axes[1])
-        sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY', marker='o', linewidth=2)
-        # --- ADDED Subplot Title ---
+        # --- MODIFIED: Added palette and hue_order ---
+        sns.lineplot(ax=axes[1], data=df, x='LT_Label', y='SERVICE_LEVEL', hue='POLICY',
+                     hue_order=unique_policies, # Ensure consistent color mapping
+                     palette=policy_palette,    # Use the 'Accent' palette
+                     marker='o', linewidth=2)
         axes[1].set_title('Absolute Service Levels by Policy', fontsize=14)
         axes[1].set_xlabel('Service Level Target (%)')
         axes[1].set_ylabel('Service Level')
         axes[1].grid(True)
         axes[1].legend(title='Policy')
-        min_sl = df['SERVICE_LEVEL'].min()
-        max_sl = df['SERVICE_LEVEL'].max()
+
+        # (Y-axis limits remain dynamic or as previously set)
+        # min_sl = df['SERVICE_LEVEL'].min()
+        # max_sl = df['SERVICE_LEVEL'].max()
         # axes[1].set_ylim(bottom=max(0, min_sl - 0.05), top=min(1.0, max_sl + 0.05))
 
-        # --- REMOVED Figure Title ---
-        # plot_title = custom_title if (custom_title and custom_title.strip()) else 'Absolute Performance Levels by Policy'
-        # fig.suptitle(plot_title, fontsize=16, y=1.02) # REMOVED
-
-        # Use tight_layout - might need less top margin now
+        # Use tight_layout
         plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjusted top margin slightly
 
         return fig
 
     except Exception as e:
         st.error(f"Error generating absolute performance plots: {e}")
-        traceback.print_exc(); return None
-# ==============================================================
-# End of modified plot_absolute_performance
-# ==============================================================
+        traceback.print_exc()
+        return None
+# --- End of modified plot_absolute_performance ---
 
 # Using the LATEST plot_quadrant_analysis (dynamic size/font, bottom legends)
 def plot_quadrant_analysis(merged_df, custom_title=None,
