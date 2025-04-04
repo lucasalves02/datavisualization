@@ -180,7 +180,7 @@ def plot_absolute_performance(input_df):
         unique_policies = sorted(df['POLICY'].unique()) # Sort for consistent order
         n_policies = len(unique_policies)
         # --- Using 'Accent' palette here for Policies ---
-        policy_palette_name = 'Set2'
+        policy_palette_name = 'Dark2'
         policy_palette = sns.color_palette(policy_palette_name, n_colors=n_policies)
         # --- End Palette Setup ---
 
