@@ -146,7 +146,7 @@ def plot_absolute_performance(input_df):
 
     df = input_df.copy()
     # Uses Fixed Figure Size
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    fig, axes = plt.subplots(2, 1, figsize=(6, 16))
 
     try:
         # Essential columns check
